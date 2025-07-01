@@ -299,7 +299,6 @@ run_test_suite() {
 run_parallel_tests() {
     local suites=("$@")
     local pids=()
-    local suite_commands=()
     
     log_step "Running ${#suites[@]} test suites in parallel (max jobs: $PARALLEL_JOBS)"
     
@@ -314,65 +313,43 @@ run_parallel_tests() {
         ["performance"]="cd '$PROJECT_ROOT' && go test -v -timeout=$TIMEOUT -run 'TestTerraformVersionPerformance' ./internal/provider/ -count=1"
     )
     
-    local active_jobs=0
-    local suite_index=0
-    
-    while [[ $suite_index -lt ${#suites[@]} ]] || [[ $active_jobs -gt 0 ]]; do
-        # Start new jobs if below limit and suites remaining
-        while [[ $active_jobs -lt $PARALLEL_JOBS ]] && [[ $suite_index -lt ${#suites[@]} ]]; do
-            local suite="${suites[$suite_index]}"
-            local command="${test_commands[$suite]}"
-            
-            if [[ -z "$command" ]]; then
-                log_warning "Unknown test suite: $suite, skipping"
-                ((suite_index++))
-                continue
-            fi
-            
-            log_debug "Starting parallel job for suite: $suite"
-            
-            # Run test suite in background
-            (run_test_suite "$suite" "$command") &
-            local pid=$!
-            pids+=($pid)
-            
-            ((active_jobs++))
-            ((suite_index++))
-        done
+    # Start all jobs
+    for suite in "${suites[@]}"; do
+        local command="${test_commands[$suite]}"
         
-        # Wait for any job to complete
-        if [[ $active_jobs -gt 0 ]]; then
-            # Use a more reliable approach: wait with timeout and check job status
-            local job_completed=false
-            
-            # Wait for any background job with a timeout
-            if timeout 1 bash -c 'wait -n' 2>/dev/null; then
-                job_completed=true
-            fi
-            
-            # Check all jobs regardless of wait -n result
-            local new_pids=()
-            for pid in "${pids[@]}"; do
-                if kill -0 "$pid" 2>/dev/null; then
-                    new_pids+=("$pid")
-                else
-                    log_debug "Parallel job completed (PID: $pid)"
-                    job_completed=true
-                    ((active_jobs--))
-                fi
-            done
-            pids=("${new_pids[@]}")
-            
-            # If no job completed, sleep briefly to avoid busy waiting
-            if [[ "$job_completed" == "false" ]]; then
-                sleep 0.1
-            fi
-            
-            log_debug "Active jobs remaining: $active_jobs"
+        if [[ -z "$command" ]]; then
+            log_warning "Unknown test suite: $suite, skipping"
+            continue
+        fi
+        
+        log_debug "Starting parallel job for suite: $suite"
+        
+        # Run test suite in background
+        (run_test_suite "$suite" "$command") &
+        pids+=($!)
+    done
+    
+    # Wait for all jobs to complete
+    log_debug "Waiting for ${#pids[@]} background jobs to complete: PIDs=(${pids[*]})"
+    
+    local parallel_success_count=0
+    local parallel_failed_count=0
+    
+    for pid in "${pids[@]}"; do
+        if wait "$pid"; then
+            log_debug "Job completed successfully (PID: $pid)"
+            ((parallel_success_count++))
+        else
+            log_debug "Job completed with error (PID: $pid)"
+            ((parallel_failed_count++))
         fi
     done
     
-    log_success "All parallel test suites completed"
+    # Update global counters (approximate since we can't get exact suite names from PIDs)
+    TOTAL_PASSED=$((TOTAL_PASSED + parallel_success_count))
+    TOTAL_FAILED=$((TOTAL_FAILED + parallel_failed_count))
+    
+    log_success "All parallel test suites completed: $parallel_success_count passed, $parallel_failed_count failed"
 }
 
 # Function to run test suites sequentially

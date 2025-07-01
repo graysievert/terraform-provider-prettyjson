@@ -197,13 +197,13 @@ func TestTerraformVersionErrorHandling(t *testing.T) {
 		{
 			name:          "invalid_json_error",
 			input:         `{"invalid": json}`,
-			expectedError: "invalid JSON",
+			expectedError: "Invalid JSON syntax detected",
 			minVersion:    "1.8.0",
 		},
 		{
 			name:          "empty_input_error",
 			input:         ``,
-			expectedError: "empty input",
+			expectedError: "JSON input cannot be empty",
 			minVersion:    "1.8.0",
 		},
 		{

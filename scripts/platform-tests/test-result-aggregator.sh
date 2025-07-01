@@ -258,36 +258,48 @@ aggregate_test_data() {
     local total_duration=0
     local successful_suites=0
     
-    # Calculate totals
-    while IFS= read -r line; do
-        if [[ "$line" =~ ^\{.*\}$ ]]; then
-            ((total_suites++))
-            
-            suite_total=$(echo "$line" | jq -r '.total_tests // 0')
-            suite_passed=$(echo "$line" | jq -r '.passed_tests // 0')
-            suite_failed=$(echo "$line" | jq -r '.failed_tests // 0')
-            suite_skipped=$(echo "$line" | jq -r '.skipped_tests // 0')
-            suite_duration=$(echo "$line" | jq -r '.duration_seconds // 0')
-            suite_status=$(echo "$line" | jq -r '.status // "unknown"')
-            
-            # Ensure numeric values are valid
-            suite_total=${suite_total//null/0}
-            suite_passed=${suite_passed//null/0}
-            suite_failed=${suite_failed//null/0}
-            suite_skipped=${suite_skipped//null/0}
-            suite_duration=${suite_duration//null/0}
-            
-            total_tests=$((total_tests + suite_total))
-            total_passed=$((total_passed + suite_passed))
-            total_failed=$((total_failed + suite_failed))
-            total_skipped=$((total_skipped + suite_skipped))
-            total_duration=$((total_duration + suite_duration))
-            
-            if [[ "$suite_status" == "success" ]]; then
-                ((successful_suites++))
+    # Calculate totals using a more reliable approach
+    if [[ -f "${parsed_file}.tmp" ]]; then
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            if [[ -n "$line" && "$line" =~ ^\{.*\}$ ]]; then
+                ((total_suites++))
+                
+                # Use jq with error handling
+                suite_total=$(echo "$line" | jq -r '.total_tests // 0' 2>/dev/null || echo "0")
+                suite_passed=$(echo "$line" | jq -r '.passed_tests // 0' 2>/dev/null || echo "0")
+                suite_failed=$(echo "$line" | jq -r '.failed_tests // 0' 2>/dev/null || echo "0")
+                suite_skipped=$(echo "$line" | jq -r '.skipped_tests // 0' 2>/dev/null || echo "0")
+                suite_duration=$(echo "$line" | jq -r '.duration_seconds // 0' 2>/dev/null || echo "0")
+                suite_status=$(echo "$line" | jq -r '.status // "unknown"' 2>/dev/null || echo "unknown")
+                
+                # Ensure numeric values are valid integers
+                suite_total=${suite_total//[^0-9]/}
+                suite_passed=${suite_passed//[^0-9]/}
+                suite_failed=${suite_failed//[^0-9]/}
+                suite_skipped=${suite_skipped//[^0-9]/}
+                suite_duration=${suite_duration//[^0-9]/}
+                
+                # Default to 0 if empty
+                suite_total=${suite_total:-0}
+                suite_passed=${suite_passed:-0}
+                suite_failed=${suite_failed:-0}
+                suite_skipped=${suite_skipped:-0}
+                suite_duration=${suite_duration:-0}
+                
+                total_tests=$((total_tests + suite_total))
+                total_passed=$((total_passed + suite_passed))
+                total_failed=$((total_failed + suite_failed))
+                total_skipped=$((total_skipped + suite_skipped))
+                total_duration=$((total_duration + suite_duration))
+                
+                if [[ "$suite_status" == "success" ]]; then
+                    ((successful_suites++))
+                fi
             fi
-        fi
-    done < "${parsed_file}.tmp"
+        done < "${parsed_file}.tmp"
+    else
+        log_warning "Parsed data file not found: ${parsed_file}.tmp"
+    fi
     
     local overall_success_rate=$(( total_tests > 0 ? (total_passed * 100) / total_tests : 0 ))
     local suite_success_rate=$(( total_suites > 0 ? (successful_suites * 100) / total_suites : 0 ))
