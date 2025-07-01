@@ -241,9 +241,15 @@ run_test_suite() {
         
         log_debug "Executing: $test_command"
         
-        # Run test with timeout and capture output
+        # Run test with timeout and capture output  
         local cmd_start=$(date +%s)
-        if timeout "$TIMEOUT" bash -c "$test_command" > "${TEST_REPORT_DIR}/${suite_name}-attempt-${attempt}.log" 2>&1; then
+        # Use a shorter timeout for individual test attempts (max 10 minutes per attempt)
+        local test_timeout="10m"
+        if [[ "$TIMEOUT" =~ ^[0-9]+m$ ]] && [[ ${TIMEOUT%m} -lt 10 ]]; then
+            test_timeout="$TIMEOUT"
+        fi
+        
+        if timeout "$test_timeout" bash -c "$test_command" > "${TEST_REPORT_DIR}/${suite_name}-attempt-${attempt}.log" 2>&1; then
             success=true
             test_output=$(cat "${TEST_REPORT_DIR}/${suite_name}-attempt-${attempt}.log")
             log_success "Test suite $suite_name passed on attempt $attempt"
@@ -254,7 +260,7 @@ run_test_suite() {
             test_output="$error_details"
             
             if [[ $exit_code -eq 124 ]]; then
-                log_error "Test suite $suite_name timed out on attempt $attempt (timeout: $TIMEOUT)"
+                log_error "Test suite $suite_name timed out on attempt $attempt (timeout: $test_timeout)"
             else
                 log_error "Test suite $suite_name failed on attempt $attempt (exit code: $exit_code)"
             fi
@@ -336,19 +342,33 @@ run_parallel_tests() {
         
         # Wait for any job to complete
         if [[ $active_jobs -gt 0 ]]; then
-            local completed_pid
-            completed_pid=$(wait -n && echo $! || echo $!)
+            # Use a more reliable approach: wait with timeout and check job status
+            local job_completed=false
             
-            # Remove completed PID from active list
-            for i in "${!pids[@]}"; do
-                if [[ "${pids[i]}" == "$completed_pid" ]]; then
-                    unset 'pids[i]'
+            # Wait for any background job with a timeout
+            if timeout 1 bash -c 'wait -n' 2>/dev/null; then
+                job_completed=true
+            fi
+            
+            # Check all jobs regardless of wait -n result
+            local new_pids=()
+            for pid in "${pids[@]}"; do
+                if kill -0 "$pid" 2>/dev/null; then
+                    new_pids+=("$pid")
+                else
+                    log_debug "Parallel job completed (PID: $pid)"
+                    job_completed=true
                     ((active_jobs--))
-                    break
                 fi
             done
+            pids=("${new_pids[@]}")
             
-            log_debug "Parallel job completed (PID: $completed_pid), active jobs: $active_jobs"
+            # If no job completed, sleep briefly to avoid busy waiting
+            if [[ "$job_completed" == "false" ]]; then
+                sleep 0.1
+            fi
+            
+            log_debug "Active jobs remaining: $active_jobs"
         fi
     done
     

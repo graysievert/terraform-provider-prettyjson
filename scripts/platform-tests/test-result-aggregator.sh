@@ -263,12 +263,19 @@ aggregate_test_data() {
         if [[ "$line" =~ ^\{.*\}$ ]]; then
             ((total_suites++))
             
-            local suite_total=$(echo "$line" | jq -r '.total_tests')
-            local suite_passed=$(echo "$line" | jq -r '.passed_tests')
-            local suite_failed=$(echo "$line" | jq -r '.failed_tests')
-            local suite_skipped=$(echo "$line" | jq -r '.skipped_tests')
-            local suite_duration=$(echo "$line" | jq -r '.duration_seconds')
-            local suite_status=$(echo "$line" | jq -r '.status')
+            suite_total=$(echo "$line" | jq -r '.total_tests // 0')
+            suite_passed=$(echo "$line" | jq -r '.passed_tests // 0')
+            suite_failed=$(echo "$line" | jq -r '.failed_tests // 0')
+            suite_skipped=$(echo "$line" | jq -r '.skipped_tests // 0')
+            suite_duration=$(echo "$line" | jq -r '.duration_seconds // 0')
+            suite_status=$(echo "$line" | jq -r '.status // "unknown"')
+            
+            # Ensure numeric values are valid
+            suite_total=${suite_total//null/0}
+            suite_passed=${suite_passed//null/0}
+            suite_failed=${suite_failed//null/0}
+            suite_skipped=${suite_skipped//null/0}
+            suite_duration=${suite_duration//null/0}
             
             total_tests=$((total_tests + suite_total))
             total_passed=$((total_passed + suite_passed))
@@ -304,7 +311,7 @@ aggregate_test_data() {
     "threshold_met": $([ $overall_success_rate -ge $SUCCESS_THRESHOLD ] && echo "true" || echo "false")
   },
   "suite_details": [
-$(sed 's/$/,/' "${parsed_file}.tmp" | sed '$ s/,$//')
+$(if [[ -f "${parsed_file}.tmp" ]]; then sed 's/$/,/' "${parsed_file}.tmp" | sed '$ s/,$//' ; else echo ""; fi)
   ],
   "environment": {
     "hostname": "$(hostname)",
@@ -317,7 +324,7 @@ $(sed 's/$/,/' "${parsed_file}.tmp" | sed '$ s/,$//')
   "metadata": {
     "aggregator_version": "1.0.0",
     "report_format": "hashicorp-standard",
-    "data_sources": $(find "$REPORT_DIR" -type f \( -name "*.json" -o -name "*.xml" -o -name "*.log" \) | jq -R . | jq -s .),
+    "data_sources": $(find "${REPORT_DIR:-test-reports}" -type f \( -name "*.json" -o -name "*.xml" -o -name "*.log" \) 2>/dev/null | jq -R . | jq -s .),
     "configuration": {
       "include_logs": $INCLUDE_LOGS,
       "success_threshold": $SUCCESS_THRESHOLD,

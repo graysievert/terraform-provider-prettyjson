@@ -4,7 +4,8 @@
       "Bash(mkdir:*)",
       "mcp__ide__getDiagnostics",
       "Bash(grep:*)",
-      "Bash(./scripts/platform-tests/test-result-aggregator.sh:*)"
+      "Bash(./scripts/platform-tests/test-result-aggregator.sh:*)",
+      "Bash(tail:*)"
     ],
     "deny": []
   }
