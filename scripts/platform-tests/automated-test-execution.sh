@@ -32,29 +32,53 @@ NC='\033[0m' # No Color
 
 # Logging functions with structured output
 log_info() {
-    echo -e "${BLUE}[INFO]${NC} $(date '+%Y-%m-%d %H:%M:%S') $1" | tee -a "$LOG_FILE"
+    local msg="${BLUE}[INFO]${NC} $(date '+%Y-%m-%d %H:%M:%S') $1"
+    echo -e "$msg"
+    if [[ -n "$LOG_FILE" ]]; then
+        echo -e "$msg" >> "$LOG_FILE"
+    fi
 }
 
 log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $(date '+%Y-%m-%d %H:%M:%S') $1" | tee -a "$LOG_FILE"
+    local msg="${GREEN}[SUCCESS]${NC} $(date '+%Y-%m-%d %H:%M:%S') $1"
+    echo -e "$msg"
+    if [[ -n "$LOG_FILE" ]]; then
+        echo -e "$msg" >> "$LOG_FILE"
+    fi
 }
 
 log_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $(date '+%Y-%m-%d %H:%M:%S') $1" | tee -a "$LOG_FILE"
+    local msg="${YELLOW}[WARNING]${NC} $(date '+%Y-%m-%d %H:%M:%S') $1"
+    echo -e "$msg"
+    if [[ -n "$LOG_FILE" ]]; then
+        echo -e "$msg" >> "$LOG_FILE"
+    fi
 }
 
 log_error() {
-    echo -e "${RED}[ERROR]${NC} $(date '+%Y-%m-%d %H:%M:%S') $1" | tee -a "$LOG_FILE"
+    local msg="${RED}[ERROR]${NC} $(date '+%Y-%m-%d %H:%M:%S') $1"
+    echo -e "$msg"
+    if [[ -n "$LOG_FILE" ]]; then
+        echo -e "$msg" >> "$LOG_FILE"
+    fi
 }
 
 log_debug() {
     if [[ "$VERBOSE" == "1" ]]; then
-        echo -e "${PURPLE}[DEBUG]${NC} $(date '+%Y-%m-%d %H:%M:%S') $1" | tee -a "$LOG_FILE"
+        local msg="${PURPLE}[DEBUG]${NC} $(date '+%Y-%m-%d %H:%M:%S') $1"
+        echo -e "$msg"
+        if [[ -n "$LOG_FILE" ]]; then
+            echo -e "$msg" >> "$LOG_FILE"
+        fi
     fi
 }
 
 log_step() {
-    echo -e "${CYAN}[STEP]${NC} $(date '+%Y-%m-%d %H:%M:%S') $1" | tee -a "$LOG_FILE"
+    local msg="${CYAN}[STEP]${NC} $(date '+%Y-%m-%d %H:%M:%S') $1"
+    echo -e "$msg"
+    if [[ -n "$LOG_FILE" ]]; then
+        echo -e "$msg" >> "$LOG_FILE"
+    fi
 }
 
 # Function to print usage
@@ -82,6 +106,8 @@ OPTIONS:
     --output-format FORMAT    Report format: json, junit, github (default: all)
     --upload-artifacts        Upload test artifacts
     --slack-webhook URL       Slack webhook for notifications
+    --performance-optimization Enable performance optimization features
+    --no-fail-fast            Disable fail-fast behavior
 
 TEST SUITES:
     unit            Unit tests using go test
@@ -126,10 +152,16 @@ create_test_report() {
     
     if [[ -n "$test_output" ]]; then
         # Parse Go test output for statistics
-        total_tests=$(echo "$test_output" | grep -E "^(PASS|FAIL|SKIP)" | wc -l || echo "0")
-        passed_tests=$(echo "$test_output" | grep -c "^PASS" || echo "0")
-        failed_tests=$(echo "$test_output" | grep -c "^FAIL" || echo "0")
-        skipped_tests=$(echo "$test_output" | grep -c "^SKIP" || echo "0")
+        total_tests=$(echo "$test_output" | grep -E "^(PASS|FAIL|SKIP)" | wc -l 2>/dev/null)
+        passed_tests=$(echo "$test_output" | grep -c "^PASS" 2>/dev/null)
+        failed_tests=$(echo "$test_output" | grep -c "^FAIL" 2>/dev/null)
+        skipped_tests=$(echo "$test_output" | grep -c "^SKIP" 2>/dev/null)
+        
+        # Ensure we have valid numbers
+        total_tests=${total_tests:-0}
+        passed_tests=${passed_tests:-0}
+        failed_tests=${failed_tests:-0}
+        skipped_tests=${skipped_tests:-0}
     fi
     
     # Create comprehensive test report
@@ -665,6 +697,14 @@ parse_args() {
                 SLACK_WEBHOOK="$2"
                 shift 2
                 ;;
+            --performance-optimization)
+                PERFORMANCE_OPTIMIZATION=1
+                shift
+                ;;
+            --no-fail-fast)
+                FAIL_FAST=0
+                shift
+                ;;
             *)
                 log_error "Unknown option: $1"
                 usage
@@ -687,6 +727,7 @@ parse_args() {
     GENERATE_REPORT=${GENERATE_REPORT:-1}
     OUTPUT_FORMAT=${OUTPUT_FORMAT:-"all"}
     UPLOAD_ARTIFACTS=${UPLOAD_ARTIFACTS:-0}
+    PERFORMANCE_OPTIMIZATION=${PERFORMANCE_OPTIMIZATION:-0}
 }
 
 # Function to validate environment
@@ -856,6 +897,12 @@ main() {
         exit 0
     fi
 }
+
+# Initialize basic logging before parsing args
+TEST_REPORT_DIR="test-reports"
+ARTIFACT_DIR="test-artifacts"
+mkdir -p "$TEST_REPORT_DIR" "$ARTIFACT_DIR"
+LOG_FILE="${TEST_REPORT_DIR}/execution.log"
 
 # Parse arguments and run
 parse_args "$@"

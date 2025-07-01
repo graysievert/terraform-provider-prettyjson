@@ -6,6 +6,10 @@
 
 A Terraform provider for formatting JSON strings with configurable indentation. This function-only provider helps maintain readable JSON configuration files in your infrastructure as code workflows.
 
+## Disclaimer
+
+This is an experiment. Almost everything in this repo is generated via AI tools. Use at your own risk.
+
 ## Features
 
 - **Multiple Indentation Options**: Support for 2-space, 4-space, and tab indentation

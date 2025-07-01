@@ -103,13 +103,13 @@ discover_test_reports() {
     local input_dir="$1"
     local reports=()
     
-    log_step "Discovering test reports in $input_dir"
+    log_step "Discovering test reports in $input_dir" >&2
     
     # Find JSON test reports
     while IFS= read -r -d '' file; do
         if [[ -f "$file" ]]; then
             reports+=("$file")
-            log_info "Found test report: $(basename "$file")"
+            log_info "Found test report: $(basename "$file")" >&2
         fi
     done < <(find "$input_dir" -name "*.json" -type f -print0 2>/dev/null)
     
@@ -117,7 +117,7 @@ discover_test_reports() {
     while IFS= read -r -d '' file; do
         if [[ -f "$file" ]]; then
             reports+=("$file")
-            log_info "Found JUnit report: $(basename "$file")"
+            log_info "Found JUnit report: $(basename "$file")" >&2
         fi
     done < <(find "$input_dir" -name "*.xml" -type f -print0 2>/dev/null)
     
@@ -125,11 +125,11 @@ discover_test_reports() {
     while IFS= read -r -d '' file; do
         if [[ -f "$file" ]]; then
             reports+=("$file")
-            log_info "Found log file: $(basename "$file")"
+            log_info "Found log file: $(basename "$file")" >&2
         fi
     done < <(find "$input_dir" -name "*.log" -type f -print0 2>/dev/null)
     
-    log_info "Discovered ${#reports[@]} test reports"
+    log_info "Discovered ${#reports[@]} test reports" >&2
     printf '%s\n' "${reports[@]}"
 }
 
@@ -172,22 +172,12 @@ parse_json_report() {
     local failed_tests=$(jq -r '.statistics.failed_tests // .failed // 0' "$report_file" 2>/dev/null)
     local duration=$(jq -r '.execution.duration_seconds // .duration // 0' "$report_file" 2>/dev/null)
     
-    # Store parsed data
-    cat << EOF >> "$PARSED_DATA_FILE"
-{
-  "source_file": "$report_file",
-  "suite_name": "$suite_name",
-  "status": "$status",
-  "total_tests": $total_tests,
-  "passed_tests": $passed_tests,
-  "failed_tests": $failed_tests,
-  "skipped_tests": $(jq -r '.statistics.skipped_tests // .skipped // 0' "$report_file" 2>/dev/null),
-  "duration_seconds": $duration,
-  "success_rate": $(( total_tests > 0 ? (passed_tests * 100) / total_tests : 0 )),
-  "environment": $(jq -c '.environment // {}' "$report_file" 2>/dev/null),
-  "timestamp": "$(date -Iseconds)"
-},
-EOF
+    # Store parsed data as single-line JSON
+    local skipped_tests=$(jq -r '.statistics.skipped_tests // .skipped // 0' "$report_file" 2>/dev/null)
+    local environment=$(jq -c '.environment // {}' "$report_file" 2>/dev/null)
+    printf '{"source_file": "%s", "suite_name": "%s", "status": "%s", "total_tests": %d, "passed_tests": %d, "failed_tests": %d, "skipped_tests": %d, "duration_seconds": %d, "success_rate": %d, "environment": %s, "timestamp": "%s"}\n' \
+        "$report_file" "$suite_name" "$status" "$total_tests" "$passed_tests" "$failed_tests" "$skipped_tests" "$duration" \
+        "$(( total_tests > 0 ? (passed_tests * 100) / total_tests : 0 ))" "$environment" "$(date -Iseconds)" >> "$PARSED_DATA_FILE"
 }
 
 # Function to parse JUnit XML report
@@ -211,21 +201,12 @@ parse_junit_report() {
     local passed_tests=$((total_tests - failures - errors))
     local suite_name=$(basename "$report_file" .xml)
     
-    cat << EOF >> "$PARSED_DATA_FILE"
-{
-  "source_file": "$report_file",
-  "suite_name": "$suite_name",
-  "status": "$([ $((failures + errors)) -eq 0 ] && echo "success" || echo "failure")",
-  "total_tests": $total_tests,
-  "passed_tests": $passed_tests,
-  "failed_tests": $((failures + errors)),
-  "skipped_tests": 0,
-  "duration_seconds": ${time%.*},
-  "success_rate": $(( total_tests > 0 ? (passed_tests * 100) / total_tests : 0 )),
-  "environment": {},
-  "timestamp": "$(date -Iseconds)"
-},
-EOF
+    # Store parsed data as single-line JSON
+    local status="$([ $((failures + errors)) -eq 0 ] && echo "success" || echo "failure")"
+    local failed_tests=$((failures + errors))
+    local success_rate=$(( total_tests > 0 ? (passed_tests * 100) / total_tests : 0 ))
+    printf '{"source_file": "%s", "suite_name": "%s", "status": "%s", "total_tests": %d, "passed_tests": %d, "failed_tests": %d, "skipped_tests": %d, "duration_seconds": %d, "success_rate": %d, "environment": {}, "timestamp": "%s"}\n' \
+        "$report_file" "$suite_name" "$status" "$total_tests" "$passed_tests" "$failed_tests" "0" "${time%.*}" "$success_rate" "$(date -Iseconds)" >> "$PARSED_DATA_FILE"
 }
 
 # Function to parse log file for basic metrics
@@ -234,9 +215,15 @@ parse_log_file() {
     local suite_name=$(basename "$log_file" .log)
     
     # Extract basic test counts from Go test output
-    local pass_count=$(grep -c "^PASS" "$log_file" 2>/dev/null || echo "0")
-    local fail_count=$(grep -c "^FAIL" "$log_file" 2>/dev/null || echo "0")
-    local skip_count=$(grep -c "^SKIP" "$log_file" 2>/dev/null || echo "0")
+    local pass_count=$(grep -c "^PASS" "$log_file" 2>/dev/null)
+    local fail_count=$(grep -c "^FAIL" "$log_file" 2>/dev/null)
+    local skip_count=$(grep -c "^SKIP" "$log_file" 2>/dev/null)
+    
+    # Ensure we have valid numbers
+    pass_count=${pass_count:-0}
+    fail_count=${fail_count:-0}
+    skip_count=${skip_count:-0}
+    
     local total_tests=$((pass_count + fail_count + skip_count))
     
     # Try to extract duration from output
@@ -245,21 +232,11 @@ parse_log_file() {
         duration=$(grep "PASS.*in.*s" "$log_file" | tail -1 | grep -oE '[0-9]+\.?[0-9]*s' | sed 's/s$//' || echo "0")
     fi
     
-    cat << EOF >> "$PARSED_DATA_FILE"
-{
-  "source_file": "$log_file",
-  "suite_name": "$suite_name",
-  "status": "$([ $fail_count -eq 0 ] && echo "success" || echo "failure")",
-  "total_tests": $total_tests,
-  "passed_tests": $pass_count,
-  "failed_tests": $fail_count,
-  "skipped_tests": $skip_count,
-  "duration_seconds": ${duration%.*},
-  "success_rate": $(( total_tests > 0 ? (pass_count * 100) / total_tests : 0 )),
-  "environment": {},
-  "timestamp": "$(date -Iseconds)"
-},
-EOF
+    # Store parsed data as single-line JSON
+    local status="$([ $fail_count -eq 0 ] && echo "success" || echo "failure")"
+    local success_rate=$(( total_tests > 0 ? (pass_count * 100) / total_tests : 0 ))
+    printf '{"source_file": "%s", "suite_name": "%s", "status": "%s", "total_tests": %d, "passed_tests": %d, "failed_tests": %d, "skipped_tests": %d, "duration_seconds": %d, "success_rate": %d, "environment": {}, "timestamp": "%s"}\n' \
+        "$log_file" "$suite_name" "$status" "$total_tests" "$pass_count" "$fail_count" "$skip_count" "${duration%.*}" "$success_rate" "$(date -Iseconds)" >> "$PARSED_DATA_FILE"
 }
 
 # Function to aggregate parsed test data
@@ -269,8 +246,8 @@ aggregate_test_data() {
     
     log_step "Aggregating test data from parsed reports"
     
-    # Remove trailing comma and create valid JSON array
-    sed '$ s/,$//' "$parsed_file" > "${parsed_file}.tmp"
+    # Copy parsed file for processing (no need to remove commas since we're using single-line JSON)
+    cp "$parsed_file" "${parsed_file}.tmp"
     
     # Create aggregated summary
     local total_suites=0
@@ -327,7 +304,7 @@ aggregate_test_data() {
     "threshold_met": $([ $overall_success_rate -ge $SUCCESS_THRESHOLD ] && echo "true" || echo "false")
   },
   "suite_details": [
-$(cat "${parsed_file}.tmp")
+$(sed 's/$/,/' "${parsed_file}.tmp" | sed '$ s/,$//')
   ],
   "environment": {
     "hostname": "$(hostname)",
@@ -705,7 +682,7 @@ main() {
     
     # Initialize temporary files
     PARSED_DATA_FILE="$OUTPUT_DIR/parsed-data.jsonl"
-    echo "" > "$PARSED_DATA_FILE"
+    : > "$PARSED_DATA_FILE"  # Create empty file without blank line
     
     # Discover and parse test reports
     local reports=($(discover_test_reports "$REPORT_DIR"))
