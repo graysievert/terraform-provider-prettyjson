@@ -52,7 +52,12 @@ jobs:
         with:
           terraform_version: ${{ matrix.terraform }}
           terraform_wrapper: false
-      
+
+      - name: Make scripts executable
+        run: |
+          chmod +x ./scripts/platform-tests/automated-test-execution.sh
+          chmod +x ./scripts/platform-tests/*.sh || true
+
       - name: Prepare and test
         run: |
           echo "Testing with Go $(go version) and Terraform $(terraform version)"
