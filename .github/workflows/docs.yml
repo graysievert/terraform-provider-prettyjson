@@ -186,7 +186,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node.js for markdown validation
-        uses: actions/setup-node@4f7c3d5d4e8bcafd4b85db0e9b1b07f4a8b5e7e8 # v4.1.0
+        uses: actions/setup-node@v4.1.0 # v4.1.0
         with:
           node-version: '20'
 
