@@ -1,0 +1,100 @@
+*.dll
+*.exe
+.DS_Store
+example.tf
+terraform.tfplan
+terraform.tfstate
+terraform.tfstate.*
+*.tfvars
+*.tfvars.json
+.terraform.lock.hcl
+.terraform.tfstate.lock.info
+crash.log
+crash.*.log
+bin/
+dist/
+modules-dev/
+/pkg/
+website/.vagrant
+website/.bundle
+website/build
+website/node_modules
+.vagrant/
+*.backup
+./*.tfstate
+.terraform/
+*.log
+*.bak
+*~
+.*.swp
+.idea
+*.iml
+*.test
+*.iml
+
+website/vendor
+
+# Test exclusions
+!command/test-fixtures/**/*.tfstate
+!command/test-fixtures/**/.terraform/
+
+# Keep windows files with windows line endings
+*.winfile eol=crlf
+
+# Logs
+logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+dev-debug.log
+# Dependency directories
+node_modules/
+# Environment variables
+.env
+# Editor directories and files
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+# OS specific
+
+# Task files
+# tasks.json
+# tasks/ 
+
+# Provider binaries
+terraform-provider-prettyjson*
+terraform-provider-*
+
+# Test reports and artifacts
+*-test-report*.json
+*-report*.json
+test-reports/
+aggregated-reports/
+environment-validation-report*.json
+architecture-test-report*.json
+platform-test-report*.json
+
+# Coverage files
+coverage.out
+coverage.html
+*.prof
+
+# Generated metadata and temp files
+META.d/
+tmp/
+terraform.d/
+
+# Test integration artifacts
+test/integration/*/providers/
+test/integration/*/.terraform/
+test/integration/*/.terraform.lock.hcl
+test/integration/*/terraform.tfstate
+test/integration/*/terraform.tfstate.backup
+test/integration/*/outputs/
+
+# Build artifacts in bin directory
+bin/
+terraform-provider-prettyjson_*

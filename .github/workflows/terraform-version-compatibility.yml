@@ -1,0 +1,440 @@
+# Comprehensive Terraform Version Compatibility Testing
+# This workflow implements multi-version testing following HashiCorp patterns
+name: Terraform Version Compatibility
+
+on:
+  pull_request:
+    paths:
+      - 'internal/provider/**'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/terraform-version-compatibility.yml'
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'internal/provider/**'
+      - 'go.mod'  
+      - 'go.sum'
+  schedule:
+    # Run daily comprehensive version testing
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      terraform_versions:
+        description: 'Custom Terraform versions to test (JSON array)'
+        required: false
+        default: '["1.8.0", "1.8.5", "1.9.0", "1.9.8", "1.10.0", "latest"]'
+        type: string
+      test_mode:
+        description: 'Test execution mode'
+        required: false
+        default: 'standard'
+        type: choice
+        options:
+          - 'standard'
+          - 'extended'
+          - 'minimal'
+      generate_report:
+        description: 'Generate compatibility report'
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+env:
+  # Provider functions require Terraform 1.8.0+
+  MIN_TERRAFORM_VERSION: "1.8.0"
+  GO_VERSION_FILE: 'go.mod'
+
+jobs:
+  # Matrix generation job for dynamic version selection
+  generate-matrix:
+    name: Generate Test Matrix
+    runs-on: ubuntu-latest
+    outputs:
+      terraform-versions: ${{ steps.set-matrix.outputs.terraform-versions }}
+      test-config: ${{ steps.set-matrix.outputs.test-config }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      
+      - name: Generate Version Matrix
+        id: set-matrix
+        run: |
+          # Default comprehensive version matrix following HashiCorp patterns
+          DEFAULT_VERSIONS='[
+            "1.8.0",
+            "1.8.1", 
+            "1.8.2",
+            "1.8.3",
+            "1.8.4",
+            "1.8.5",
+            "1.9.0",
+            "1.9.1",
+            "1.9.2",
+            "1.9.3", 
+            "1.9.4",
+            "1.9.5",
+            "1.9.6",
+            "1.9.7",
+            "1.9.8",
+            "1.10.0",
+            "1.10.1",
+            "latest"
+          ]'
+          
+          MINIMAL_VERSIONS='["1.8.0", "1.9.8", "latest"]'
+          EXTENDED_VERSIONS='[
+            "1.8.0", "1.8.1", "1.8.2", "1.8.3", "1.8.4", "1.8.5",
+            "1.9.0", "1.9.1", "1.9.2", "1.9.3", "1.9.4", "1.9.5", "1.9.6", "1.9.7", "1.9.8",
+            "1.10.0", "1.10.1", "1.10.2", "1.10.3",
+            "latest"
+          ]'
+          
+          # Determine test mode
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            if [[ "${{ github.event.inputs.terraform_versions }}" != "" ]]; then
+              VERSIONS="${{ github.event.inputs.terraform_versions }}"
+            else
+              case "${{ github.event.inputs.test_mode }}" in
+                "minimal")
+                  VERSIONS="$MINIMAL_VERSIONS"
+                  ;;
+                "extended")
+                  VERSIONS="$EXTENDED_VERSIONS"
+                  ;;
+                *)
+                  VERSIONS="$DEFAULT_VERSIONS"
+                  ;;
+              esac
+            fi
+          elif [[ "${{ github.event_name }}" == "schedule" ]]; then
+            VERSIONS="$EXTENDED_VERSIONS"
+          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            VERSIONS="$MINIMAL_VERSIONS"
+          else
+            VERSIONS="$DEFAULT_VERSIONS"
+          fi
+          
+          echo "terraform-versions=$VERSIONS" >> $GITHUB_OUTPUT
+          
+          # Set test configuration based on context
+          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+            TEST_CONFIG='{"timeout": 30, "retries": 2, "verbose": true}'
+          else
+            TEST_CONFIG='{"timeout": 15, "retries": 1, "verbose": false}'
+          fi
+          
+          echo "test-config=$TEST_CONFIG" >> $GITHUB_OUTPUT
+          
+          # Debug output
+          echo "Selected Terraform versions: $VERSIONS"
+          echo "Test configuration: $TEST_CONFIG"
+
+  # Core version compatibility testing
+  version-compatibility:
+    name: Test Terraform ${{ matrix.terraform-version }}
+    needs: generate-matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ fromJSON(needs.generate-matrix.outputs.test-config).timeout }}
+    strategy:
+      fail-fast: false
+      matrix:
+        terraform-version: ${{ fromJSON(needs.generate-matrix.outputs.terraform-versions) }}
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      
+      - name: Setup Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: ${{ env.GO_VERSION_FILE }}
+          cache: true
+      
+      - name: Setup Terraform ${{ matrix.terraform-version }}
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: ${{ matrix.terraform-version }}
+          terraform_wrapper: false
+      
+      - name: Validate Terraform Version
+        run: |
+          terraform version
+          TF_VERSION=$(terraform version -json | jq -r '.terraform_version' 2>/dev/null || terraform version | head -n1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          echo "Terraform version: $TF_VERSION"
+          echo "TF_VERSION=$TF_VERSION" >> $GITHUB_ENV
+          
+          # Verify minimum version requirement
+          if [[ "$TF_VERSION" == "latest" ]]; then
+            echo "Using latest Terraform version"
+          else
+            # Version comparison using sort -V
+            MIN_VERSION="${{ env.MIN_TERRAFORM_VERSION }}"
+            if ! printf '%s\n%s\n' "$MIN_VERSION" "$TF_VERSION" | sort -V | head -1 | grep -q "^$MIN_VERSION$"; then
+              echo "❌ Terraform version $TF_VERSION is below minimum required version $MIN_VERSION"
+              exit 1
+            fi
+            echo "✅ Terraform version $TF_VERSION meets minimum requirement $MIN_VERSION"
+          fi
+      
+      - name: Download Go modules
+        run: go mod download
+      
+      - name: Verify Go modules
+        run: go mod verify
+      
+      - name: Build Provider
+        run: go build -v .
+      
+      - name: Run Unit Tests
+        run: |
+          echo "Running unit tests with Terraform ${{ matrix.terraform-version }}"
+          if [[ "${{ fromJSON(needs.generate-matrix.outputs.test-config).verbose }}" == "true" ]]; then
+            go test -v -timeout=10m ./internal/provider/
+          else
+            go test -timeout=10m ./internal/provider/
+          fi
+        env:
+          CGO_ENABLED: 0
+          TF_VERSION: ${{ env.TF_VERSION }}
+      
+      - name: Run Acceptance Tests
+        run: |
+          echo "Running acceptance tests with Terraform ${{ matrix.terraform-version }}"
+          if [[ "${{ fromJSON(needs.generate-matrix.outputs.test-config).verbose }}" == "true" ]]; then
+            go test -v -timeout=20m ./internal/provider/
+          else
+            go test -timeout=20m ./internal/provider/
+          fi
+        env:
+          TF_ACC: "1"
+          TF_VERSION: ${{ env.TF_VERSION }}
+          # Enable debug logging for scheduled runs
+          TF_LOG: ${{ github.event_name == 'schedule' && 'DEBUG' || 'INFO' }}
+      
+      - name: Run Function-Specific Tests
+        run: |
+          echo "Running function-specific tests with Terraform ${{ matrix.terraform-version }}"
+          # Test jsonprettyprint function with version-specific configurations
+          go test -v -timeout=10m -run "TestJsonPrettyPrintFunction" ./internal/provider/
+        env:
+          TF_ACC: "1"
+          TF_VERSION: ${{ env.TF_VERSION }}
+      
+      - name: Generate Version-Specific Test Report
+        if: always()
+        run: |
+          cat > "terraform-${{ matrix.terraform-version }}-compatibility-report.json" << EOF
+          {
+            "terraform_version": "${{ matrix.terraform-version }}",
+            "actual_version": "${TF_VERSION}",
+            "test_timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+            "test_status": "${{ job.status }}",
+            "go_version": "$(go version)",
+            "provider_build": "$(test -f terraform-provider-prettyjson && echo 'success' || echo 'failed')",
+            "test_environment": {
+              "runner_os": "${{ runner.os }}",
+              "runner_arch": "${{ runner.arch }}",
+              "github_event": "${{ github.event_name }}"
+            }
+          }
+          EOF
+      
+      - name: Upload Test Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-${{ matrix.terraform-version }}-test-results
+          path: |
+            terraform-*-compatibility-report.json
+            *.log
+          retention-days: 30
+
+  # Version-specific behavior testing
+  version-behavior-tests:
+    name: Version Behavior Analysis
+    needs: [generate-matrix, version-compatibility]
+    if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        terraform-version: ["1.8.0", "1.9.0", "1.10.0", "latest"]
+        test-scenario: ["error-handling", "performance", "protocol-compatibility"]
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      
+      - name: Setup Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: ${{ env.GO_VERSION_FILE }}
+          cache: true
+      
+      - name: Setup Terraform ${{ matrix.terraform-version }}
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: ${{ matrix.terraform-version }}
+          terraform_wrapper: false
+      
+      - name: Run Error Handling Tests
+        if: matrix.test-scenario == 'error-handling'
+        run: |
+          echo "Testing error handling patterns with Terraform ${{ matrix.terraform-version }}"
+          go test -v -timeout=10m -run "TestJsonPrettyPrintFunction.*Error" ./internal/provider/
+        env:
+          TF_ACC: "1"
+          TF_LOG: "DEBUG"
+      
+      - name: Run Performance Tests
+        if: matrix.test-scenario == 'performance'
+        run: |
+          echo "Running performance benchmarks with Terraform ${{ matrix.terraform-version }}"
+          go test -v -timeout=15m -bench="BenchmarkJsonPrettyPrintFunction" -benchmem ./internal/provider/
+        env:
+          TF_ACC: "1"
+      
+      - name: Run Protocol Compatibility Tests
+        if: matrix.test-scenario == 'protocol-compatibility'
+        run: |
+          echo "Testing protocol compatibility with Terraform ${{ matrix.terraform-version }}"
+          go test -v -timeout=10m -run "TestJsonPrettyPrintFunction.*Protocol" ./internal/provider/
+        env:
+          TF_ACC: "1"
+          TF_LOG: "TRACE"
+
+  # Compatibility report generation
+  generate-compatibility-report:
+    name: Generate Compatibility Report
+    needs: [generate-matrix, version-compatibility]
+    if: always() && (github.event.inputs.generate_report == 'true' || github.event_name == 'schedule')
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      
+      - name: Download All Test Results
+        uses: actions/download-artifact@v4
+        with:
+          path: test-results
+      
+      - name: Generate Comprehensive Compatibility Report
+        run: |
+          cat > compatibility-report.md << 'EOF'
+          # Terraform Version Compatibility Report
+          
+          **Generated:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")  
+          **Event:** ${{ github.event_name }}  
+          **Ref:** ${{ github.ref }}  
+          **Commit:** ${{ github.sha }}
+          
+          ## Summary
+          
+          This report contains compatibility test results for the prettyjson Terraform provider across multiple Terraform versions.
+          
+          ## Test Matrix
+          
+          **Tested Versions:** ${{ needs.generate-matrix.outputs.terraform-versions }}
+          
+          ## Results
+          
+          | Terraform Version | Status | Notes |
+          |-------------------|--------|-------|
+          EOF
+          
+          # Process test results
+          for dir in test-results/terraform-*-test-results; do
+            if [[ -d "$dir" ]]; then
+              version=$(basename "$dir" | sed 's/terraform-//' | sed 's/-test-results//')
+              if [[ -f "$dir/terraform-$version-compatibility-report.json" ]]; then
+                status=$(jq -r '.test_status // "unknown"' "$dir/terraform-$version-compatibility-report.json")
+                actual_version=$(jq -r '.actual_version // "unknown"' "$dir/terraform-$version-compatibility-report.json")
+                echo "| $version ($actual_version) | $status | - |" >> compatibility-report.md
+              else
+                echo "| $version | missing | No report found |" >> compatibility-report.md
+              fi
+            fi
+          done
+          
+          cat >> compatibility-report.md << 'EOF'
+          
+          ## Test Configuration
+          
+          - **Provider Functions Minimum Version:** ${{ env.MIN_TERRAFORM_VERSION }}
+          - **Test Timeout:** ${{ fromJSON(needs.generate-matrix.outputs.test-config).timeout }} minutes
+          - **Test Mode:** ${{ github.event.inputs.test_mode || 'auto' }}
+          
+          ## Recommendations
+          
+          - Ensure Terraform version >= ${{ env.MIN_TERRAFORM_VERSION }} for provider function support
+          - Regularly test against latest Terraform releases
+          - Monitor for deprecation warnings in provider function protocol
+          
+          EOF
+      
+      - name: Upload Compatibility Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-compatibility-report
+          path: |
+            compatibility-report.md
+            test-results/**/*.json
+          retention-days: 90
+      
+      - name: Comment on PR (if applicable)
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@e69ef5462fd455e02edcaf4dd7708eda96b9eda0 # v7.0.1
+        with:
+          script: |
+            const fs = require('fs');
+            if (fs.existsSync('compatibility-report.md')) {
+              const report = fs.readFileSync('compatibility-report.md', 'utf8');
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: '## Terraform Version Compatibility Report\n\n' + report
+              });
+            }
+
+  # Results summary
+  compatibility-summary:
+    name: Compatibility Test Summary
+    needs: [generate-matrix, version-compatibility]
+    if: always()
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Evaluate Results
+        run: |
+          echo "# Terraform Version Compatibility Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Test Matrix:** ${{ needs.generate-matrix.outputs.terraform-versions }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Overall Status:** ${{ needs.version-compatibility.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ "${{ needs.version-compatibility.result }}" == "success" ]]; then
+            echo "✅ All Terraform version compatibility tests passed" >> $GITHUB_STEP_SUMMARY
+            echo "The provider is compatible with all tested Terraform versions." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Some Terraform version compatibility tests failed" >> $GITHUB_STEP_SUMMARY
+            echo "Review individual test results for specific version issues." >> $GITHUB_STEP_SUMMARY
+          fi
+      
+      - name: Set Exit Code
+        run: |
+          if [[ "${{ needs.version-compatibility.result }}" == "success" ]]; then
+            echo "All compatibility tests passed"
+            exit 0
+          else
+            echo "Some compatibility tests failed"
+            exit 1
+          fi

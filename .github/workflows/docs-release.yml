@@ -1,0 +1,151 @@
+# Documentation Release workflow.
+name: Documentation Release
+
+# Run on releases to ensure documentation is current
+on:
+  release:
+    types: [published, created]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to update documentation for'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  update-release-docs:
+    name: Update Release Documentation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_wrapper: false
+
+      - name: Get release version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            VERSION="${{ github.event.release.tag_name }}"
+          elif [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "dev")
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Release version: ${VERSION}"
+
+      - name: Generate release documentation
+        run: |
+          echo "📚 Generating documentation for release ${{ steps.version.outputs.version }}..."
+          make docs
+
+      - name: Update documentation with version info
+        run: |
+          # Add version information to provider documentation
+          sed -i '1a\
+          > **Version:** ${{ steps.version.outputs.version }}\
+          ' docs/index.md
+          
+          echo "📝 Updated documentation with version ${{ steps.version.outputs.version }}"
+
+      - name: Validate release documentation
+        run: |
+          echo "🔍 Validating release documentation..."
+          
+          # Run standard validation
+          make docs-validate
+          
+          # Additional release-specific checks
+          grep -q "${{ steps.version.outputs.version }}" docs/index.md || (echo "❌ Version info missing from docs" && exit 1)
+          
+          # Check for placeholder content
+          if grep -q "example\|placeholder\|TODO" docs/index.md; then
+            echo "⚠️  Found placeholder content in release documentation"
+          fi
+          
+          echo "✅ Release documentation validation passed"
+
+      - name: Create documentation archive
+        run: |
+          mkdir -p release-docs
+          cp -r docs/* release-docs/
+          tar -czf "documentation-${{ steps.version.outputs.version }}.tar.gz" -C release-docs .
+          echo "📦 Created documentation archive"
+
+      - name: Upload documentation to release
+        if: github.event_name == 'release'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./documentation-${{ steps.version.outputs.version }}.tar.gz
+          asset_name: documentation-${{ steps.version.outputs.version }}.tar.gz
+          asset_content_type: application/gzip
+
+      - name: Commit updated documentation
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          
+          if git diff --quiet docs/; then
+            echo "No documentation changes to commit"
+          else
+            git add docs/
+            git commit -m "docs: update documentation for release ${{ steps.version.outputs.version }}
+
+            📋 Generated documentation for release ${{ steps.version.outputs.version }}
+            🤖 Auto-generated with terraform-plugin-docs
+            
+            Co-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
+            git push
+          fi
+
+      - name: Create release summary
+        run: |
+          cat > release-summary.md << EOF
+          # 📚 Documentation Release Summary
+          
+          **Version:** ${{ steps.version.outputs.version }}
+          **Generated:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          
+          ## 📋 Documentation Files
+          
+          - **Provider Documentation:** \`docs/index.md\`
+          - **Function Documentation:** \`docs/functions/jsonprettyprint.md\`
+          
+          ## ✅ Validation Results
+          
+          - Provider documentation validated
+          - Function documentation validated  
+          - Examples included and validated
+          - Error handling documentation present
+          - Performance notes included
+          - Version information added
+          
+          ## 📦 Artifacts
+          
+          - Documentation archive: \`documentation-${{ steps.version.outputs.version }}.tar.gz\`
+          
+          EOF
+          
+          echo "📝 Release summary created"
+          cat release-summary.md

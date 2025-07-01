@@ -1,0 +1,210 @@
+# Documentation Generation workflow.
+name: Documentation
+
+# Run documentation generation on documentation-related changes
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'internal/provider/**/*.go'
+      - 'examples/**/*.tf'
+      - 'examples/**/*.md'
+      - 'scripts/enhance-docs.sh'
+      - 'templates/**'
+      - '.github/workflows/docs.yml'
+  pull_request:
+    paths:
+      - 'internal/provider/**/*.go'
+      - 'examples/**/*.tf'
+      - 'examples/**/*.md'
+      - 'scripts/enhance-docs.sh'
+      - 'templates/**'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+    inputs:
+      force_update:
+        description: 'Force documentation update even if no changes detected'
+        required: false
+        default: 'false'
+        type: boolean
+
+# Documentation generation needs read/write permissions
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  # Generate and validate documentation
+  generate-docs:
+    name: Generate Documentation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_wrapper: false
+
+      - name: Download Go modules
+        run: go mod download
+
+      - name: Generate documentation
+        run: make docs
+
+      - name: Check for documentation changes
+        id: check_changes
+        run: |
+          if git diff --quiet docs/; then
+            echo "changes=false" >> $GITHUB_OUTPUT
+            echo "No documentation changes detected"
+          else
+            echo "changes=true" >> $GITHUB_OUTPUT
+            echo "Documentation changes detected"
+            git diff --stat docs/
+          fi
+
+      - name: Validate generated documentation
+        run: |
+          echo "🔍 Validating generated documentation..."
+          
+          # Check that all required files exist
+          test -f docs/index.md || (echo "❌ Provider documentation missing" && exit 1)
+          test -f docs/functions/jsonprettyprint.md || (echo "❌ Function documentation missing" && exit 1)
+          
+          # Check for key content in provider docs
+          grep -q "prettyjson Provider" docs/index.md || (echo "❌ Provider title missing" && exit 1)
+          grep -q "jsonprettyprint" docs/index.md || (echo "❌ Function reference missing from provider docs" && exit 1)
+          
+          # Check for key content in function docs
+          grep -q "jsonprettyprint" docs/functions/jsonprettyprint.md || (echo "❌ Function title missing" && exit 1)
+          grep -q "## Examples" docs/functions/jsonprettyprint.md || (echo "❌ Examples section missing from function docs" && exit 1)
+          grep -q "terraform" docs/functions/jsonprettyprint.md || (echo "❌ Terraform examples missing" && exit 1)
+          
+          # Check that enhanced content is present
+          grep -q "Error Handling" docs/functions/jsonprettyprint.md || (echo "❌ Enhanced error handling section missing" && exit 1)
+          grep -q "Performance Notes" docs/functions/jsonprettyprint.md || (echo "❌ Performance notes missing" && exit 1)
+          
+          echo "✅ Documentation validation passed"
+
+      - name: Commit documentation changes (on main/master)
+        if: steps.check_changes.outputs.changes == 'true' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && github.event_name == 'push'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add docs/
+          git commit -m "docs: auto-update generated documentation
+
+          🤖 Generated with terraform-plugin-docs
+          📝 Enhanced with examples and detailed descriptions
+          
+          Co-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
+          git push
+
+      - name: Comment on PR with documentation status
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(comment => 
+              comment.user.type === 'Bot' && comment.body.includes('📚 Documentation Status')
+            );
+
+            const changes = '${{ steps.check_changes.outputs.changes }}' === 'true';
+            
+            const body = `📚 **Documentation Status**
+
+            ${changes ? '✅ Documentation has been updated' : '✅ Documentation is up to date'}
+            
+            **Generated files:**
+            - \`docs/index.md\` - Provider documentation
+            - \`docs/functions/jsonprettyprint.md\` - Function documentation
+            
+            ${changes ? '**Changes detected:** The documentation has been regenerated based on code changes.' : '**No changes:** Documentation is current with the latest code.'}
+            
+            <details>
+            <summary>📋 Validation Results</summary>
+            
+            - ✅ Provider documentation exists
+            - ✅ Function documentation exists  
+            - ✅ Examples are included
+            - ✅ Error handling documentation present
+            - ✅ Performance notes included
+            - ✅ Enhanced content validation passed
+            
+            </details>`;
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+            }
+
+  # Additional job to check documentation links and quality
+  validate-docs:
+    name: Validate Documentation Quality
+    runs-on: ubuntu-latest
+    needs: generate-docs
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js for markdown validation
+        uses: actions/setup-node@4f7c3d5d4e8bcafd4b85db0e9b1b07f4a8b5e7e8 # v4.1.0
+        with:
+          node-version: '20'
+
+      - name: Install markdown tools
+        run: |
+          npm install -g markdownlint-cli2
+          npm install -g markdown-link-check
+
+      - name: Lint markdown files
+        run: |
+          echo "🔍 Linting markdown documentation..."
+          markdownlint-cli2 "docs/**/*.md" || echo "⚠️  Markdown linting found issues (non-blocking)"
+
+      - name: Check documentation links
+        run: |
+          echo "🔗 Checking documentation links..."
+          find docs -name "*.md" -exec markdown-link-check {} \; || echo "⚠️  Link checking found issues (non-blocking)"
+
+      - name: Check for TODO/FIXME in documentation
+        run: |
+          echo "📝 Checking for unfinished documentation..."
+          if grep -r "TODO\|FIXME\|XXX" docs/; then
+            echo "⚠️  Found TODO/FIXME items in documentation"
+            exit 1
+          else
+            echo "✅ No unfinished documentation items found"
+          fi

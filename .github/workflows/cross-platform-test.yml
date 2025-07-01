@@ -1,0 +1,355 @@
+# Cross-platform testing workflow following HashiCorp patterns
+name: Cross-Platform Tests
+
+# Trigger on pull requests and main branch pushes
+on:
+  pull_request:
+    paths-ignore:
+      - 'README.md'
+      - 'docs/**'
+      - '*.md'
+  push:
+    branches:
+      - main
+      - master
+    paths-ignore:
+      - 'README.md' 
+      - 'docs/**'
+      - '*.md'
+  schedule:
+    # Run nightly for extended compatibility testing
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      terraform_versions:
+        description: 'Comma-separated Terraform versions to test'
+        required: false
+        default: '1.8.5,1.9.8,latest'
+        type: string
+      os_matrix:
+        description: 'Operating systems to test'
+        required: false
+        default: 'ubuntu-latest,windows-latest,macos-latest'
+        type: string
+      run_performance_tests:
+        description: 'Run performance tests'
+        required: false
+        default: false
+        type: boolean
+
+# Cross-platform testing needs read permissions only
+permissions:
+  contents: read
+
+env:
+  # Provider functions require Terraform 1.8.0+
+  MIN_TERRAFORM_VERSION: "1.8.0"
+  # Go version should match go.mod
+  GO_VERSION_FILE: 'go.mod'
+
+jobs:
+  # Matrix strategy following HashiCorp patterns
+  cross-platform-matrix:
+    name: Cross-Platform Matrix Tests
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        terraform: ['1.8.5', '1.9.8', 'latest']
+        go-version: ['1.23']
+        include:
+          # Performance testing on Linux with latest versions
+          - os: ubuntu-latest
+            terraform: 'latest'
+            go-version: '1.23'
+            special-test: 'performance'
+          # Windows path testing
+          - os: windows-latest
+            terraform: 'latest'
+            go-version: '1.23'
+            special-test: 'windows-paths'
+          # macOS case sensitivity testing
+          - os: macos-latest
+            terraform: 'latest'
+            go-version: '1.23'
+            special-test: 'case-sensitivity'
+        exclude:
+          # Exclude older Terraform versions on Windows for faster CI
+          - os: windows-latest
+            terraform: '1.8.5'
+          # Exclude older Terraform versions on macOS for faster CI  
+          - os: macos-latest
+            terraform: '1.8.5'
+    
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      
+      - name: Setup Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache: true
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: ${{ matrix.terraform }}
+          terraform_wrapper: false
+      
+      # Environment validation before testing
+      - name: Validate Environment (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          chmod +x scripts/platform-tests/validate-environment.sh
+          ./scripts/platform-tests/validate-environment.sh --report
+      
+      - name: Validate Environment (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          chmod +x scripts/platform-tests/validate-environment.sh
+          ./scripts/platform-tests/validate-environment.sh --report
+      
+      # Platform-specific environment setup
+      - name: Setup Platform Environment (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          chmod +x scripts/platform-tests/setup-platform-env.sh
+          ./scripts/platform-tests/setup-platform-env.sh
+      
+      - name: Setup Platform Environment (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          # Convert script to Windows-compatible format if needed
+          chmod +x scripts/platform-tests/setup-platform-env.sh
+          ./scripts/platform-tests/setup-platform-env.sh
+      
+      - name: Download Go modules
+        run: go mod download
+      
+      - name: Verify Go modules
+        run: go mod verify
+      
+      # Build verification across platforms
+      - name: Build Provider
+        run: go build -v .
+      
+      # Static analysis (run on all platforms to catch platform-specific issues)
+      - name: Run Go Vet
+        run: go vet ./...
+      
+      # Unit tests (quick feedback across all platforms)
+      - name: Run Unit Tests
+        run: go test -v -timeout=5m ./internal/provider/
+        env:
+          CGO_ENABLED: 0
+      
+      # Acceptance tests with platform-specific configurations
+      - name: Run Acceptance Tests
+        run: go test -v -timeout=15m ./internal/provider/
+        env:
+          TF_ACC: "1"
+          # Platform-specific environment variables
+          TEST_PLATFORM: ${{ runner.os }}
+          TEST_ARCH: ${{ runner.arch }}
+      
+      # Platform-specific tests based on matrix include
+      - name: Run Performance Tests
+        if: matrix.special-test == 'performance'
+        run: |
+          echo "Running performance tests on ${{ matrix.os }}"
+          chmod +x scripts/platform-tests/run-platform-tests.sh
+          ./scripts/platform-tests/run-platform-tests.sh --unit-only --timeout 10m --generate-report
+      
+      - name: Run Windows Path Tests
+        if: matrix.special-test == 'windows-paths' && runner.os == 'Windows'
+        shell: bash
+        run: |
+          echo "Running Windows-specific path tests"
+          chmod +x scripts/platform-tests/run-platform-tests.sh
+          ./scripts/platform-tests/run-platform-tests.sh --platform windows --generate-report
+      
+      - name: Run Case Sensitivity Tests
+        if: matrix.special-test == 'case-sensitivity' && runner.os == 'macOS'
+        run: |
+          echo "Running macOS case sensitivity tests"
+          chmod +x scripts/platform-tests/run-platform-tests.sh
+          ./scripts/platform-tests/run-platform-tests.sh --platform darwin --generate-report
+      
+      # Upload test reports and artifacts
+      - name: Upload Test Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-${{ matrix.os }}-${{ matrix.terraform }}-${{ matrix.go-version }}
+          path: |
+            *.json
+            test-report-*.json
+            platform-test-report-*.json
+            environment-validation-report-*.json
+          retention-days: 30
+      
+      # Generate coverage report (Linux only to avoid duplication)
+      - name: Generate Coverage Report
+        if: matrix.os == 'ubuntu-latest' && matrix.terraform == 'latest'
+        run: |
+          go test -v -coverprofile=coverage.out ./internal/provider/
+          go tool cover -html=coverage.out -o coverage.html
+      
+      - name: Upload Coverage Report
+        if: matrix.os == 'ubuntu-latest' && matrix.terraform == 'latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            coverage.out
+            coverage.html
+          retention-days: 30
+
+  # Architecture-specific testing (separate job for clarity)
+  architecture-tests:
+    name: Architecture-Specific Tests
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # AMD64 testing
+          - os: ubuntu-latest
+            goarch: amd64
+            terraform: 'latest'
+          # ARM64 testing (using larger runner for ARM64 simulation)
+          - os: ubuntu-latest
+            goarch: arm64
+            terraform: 'latest'
+          # Windows AMD64
+          - os: windows-latest
+            goarch: amd64
+            terraform: 'latest'
+    
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      
+      - name: Setup Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: ${{ env.GO_VERSION_FILE }}
+          cache: true
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: ${{ matrix.terraform }}
+          terraform_wrapper: false
+      
+      - name: Cross-Compile for Architecture
+        run: |
+          export GOARCH=${{ matrix.goarch }}
+          echo "Building for architecture: $GOARCH"
+          go build -v .
+        env:
+          CGO_ENABLED: 0
+      
+      - name: Run Architecture-Specific Tests
+        run: |
+          export GOARCH=${{ matrix.goarch }}
+          echo "Testing with architecture: $GOARCH"
+          go test -v ./internal/provider/
+        env:
+          CGO_ENABLED: 0
+
+  # Terraform compatibility testing (extended matrix for scheduled runs)
+  terraform-compatibility:
+    name: Terraform Compatibility Tests
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        terraform: ['1.8.0', '1.8.5', '1.9.0', '1.9.8', 'latest']
+        os: [ubuntu-latest]
+    
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      
+      - name: Setup Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: ${{ env.GO_VERSION_FILE }}
+          cache: true
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: ${{ matrix.terraform }}
+          terraform_wrapper: false
+      
+      - name: Validate Terraform Version
+        run: |
+          terraform version
+          # Verify minimum version requirement
+          TF_VERSION=$(terraform version -json | jq -r '.terraform_version')
+          echo "Testing with Terraform version: $TF_VERSION"
+      
+      - name: Build and Test
+        run: |
+          go mod download
+          go build -v .
+          go test -v ./internal/provider/
+        env:
+          TF_ACC: "1"
+
+  # Results aggregation job
+  test-results:
+    name: Test Results Summary
+    needs: [cross-platform-matrix, architecture-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Download all test artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: test-results
+      
+      - name: Generate Test Summary
+        run: |
+          echo "# Cross-Platform Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Matrix Test Results" >> $GITHUB_STEP_SUMMARY
+          
+          # Count artifacts to determine success/failure
+          if [ -d "test-results" ]; then
+            echo "Test artifacts found:" >> $GITHUB_STEP_SUMMARY
+            find test-results -name "*.json" -exec basename {} \; | sort >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No test artifacts found" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Test Status" >> $GITHUB_STEP_SUMMARY
+          echo "- Cross-platform matrix: ${{ needs.cross-platform-matrix.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Architecture tests: ${{ needs.architecture-tests.result }}" >> $GITHUB_STEP_SUMMARY
+      
+      - name: Check Overall Results
+        run: |
+          if [[ "${{ needs.cross-platform-matrix.result }}" == "success" && "${{ needs.architecture-tests.result }}" == "success" ]]; then
+            echo "✅ All cross-platform tests passed"
+            exit 0
+          else
+            echo "❌ Some cross-platform tests failed"
+            echo "Matrix result: ${{ needs.cross-platform-matrix.result }}"
+            echo "Architecture result: ${{ needs.architecture-tests.result }}"
+            exit 1
+          fi

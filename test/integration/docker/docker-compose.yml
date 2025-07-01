@@ -1,0 +1,170 @@
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: MPL-2.0
+
+# Docker Compose configuration for cross-platform integration testing
+# This configuration defines services for testing the provider across
+# different environments and base images
+
+version: '3.8'
+
+services:
+  # Ubuntu-based integration testing
+  integration-test-ubuntu:
+    build:
+      context: ../../..
+      dockerfile: test/integration/docker/Dockerfile.integration-test
+      target: integration-test
+    container_name: prettyjson-test-ubuntu
+    volumes:
+      - ../../../test-results:/test/test-results
+      - ../../../.:/test:ro
+    environment:
+      - TEST_PLATFORM=linux-ubuntu
+      - TEST_ARCH=amd64
+      - GO_ENV=container
+    command: ["./scripts/platform-tests/integration-test-runner.sh", "-e", "local", "--test-type", "all", "--verbose"]
+    networks:
+      - integration-test
+    
+  # Alpine-based integration testing  
+  integration-test-alpine:
+    build:
+      context: ../../..
+      dockerfile: test/integration/docker/Dockerfile.integration-test
+      target: integration-test-alpine
+    container_name: prettyjson-test-alpine
+    volumes:
+      - ../../../test-results:/test/test-results
+      - ../../../.:/test:ro
+    environment:
+      - TEST_PLATFORM=linux-alpine
+      - TEST_ARCH=amd64
+      - GO_ENV=container
+    command: ["./scripts/platform-tests/integration-test-runner.sh", "-e", "local", "--test-type", "all", "--verbose"]
+    networks:
+      - integration-test
+      
+  # CentOS-based integration testing
+  integration-test-centos:
+    build:
+      context: ../../..
+      dockerfile: test/integration/docker/Dockerfile.integration-test
+      target: integration-test-centos
+    container_name: prettyjson-test-centos
+    volumes:
+      - ../../../test-results:/test/test-results
+      - ../../../.:/test:ro
+    environment:
+      - TEST_PLATFORM=linux-centos
+      - TEST_ARCH=amd64
+      - GO_ENV=container
+    command: ["./scripts/platform-tests/integration-test-runner.sh", "-e", "local", "--test-type", "all", "--verbose"]
+    networks:
+      - integration-test
+
+  # Data exchange testing service
+  data-exchange-test:
+    build:
+      context: ../../..
+      dockerfile: test/integration/docker/Dockerfile.integration-test
+      target: integration-test
+    container_name: prettyjson-data-exchange
+    volumes:
+      - ../../../test-results:/test/test-results
+      - ../../../.:/test:ro
+    environment:
+      - TEST_PLATFORM=linux-ubuntu
+      - TEST_ARCH=amd64
+      - GO_ENV=container
+    command: ["./scripts/platform-tests/integration-test-runner.sh", "-e", "local", "--test-type", "data-exchange", "--verbose"]
+    networks:
+      - integration-test
+
+  # File format testing service
+  file-format-test:
+    build:
+      context: ../../..
+      dockerfile: test/integration/docker/Dockerfile.integration-test
+      target: integration-test
+    container_name: prettyjson-file-format
+    volumes:
+      - ../../../test-results:/test/test-results
+      - ../../../.:/test:ro
+    environment:
+      - TEST_PLATFORM=linux-ubuntu
+      - TEST_ARCH=amd64
+      - GO_ENV=container
+    command: ["./scripts/platform-tests/integration-test-runner.sh", "-e", "local", "--test-type", "file-format", "--verbose"]
+    networks:
+      - integration-test
+
+  # End-to-end workflow testing service
+  e2e-workflow-test:
+    build:
+      context: ../../..
+      dockerfile: test/integration/docker/Dockerfile.integration-test
+      target: integration-test
+    container_name: prettyjson-e2e-workflow
+    volumes:
+      - ../../../test-results:/test/test-results
+      - ../../../.:/test:ro
+    environment:
+      - TEST_PLATFORM=linux-ubuntu
+      - TEST_ARCH=amd64
+      - GO_ENV=container
+    command: ["./scripts/platform-tests/integration-test-runner.sh", "-e", "local", "--test-type", "e2e", "--verbose"]
+    networks:
+      - integration-test
+
+  # Performance testing service
+  performance-test:
+    build:
+      context: ../../..
+      dockerfile: test/integration/docker/Dockerfile.integration-test
+      target: integration-test
+    container_name: prettyjson-performance
+    volumes:
+      - ../../../test-results:/test/test-results
+      - ../../../.:/test:ro
+    environment:
+      - TEST_PLATFORM=linux-ubuntu
+      - TEST_ARCH=amd64
+      - GO_ENV=container
+      - TEST_TIMEOUT=600  # 10 minutes for performance tests
+    command: ["./scripts/platform-tests/integration-test-runner.sh", "-e", "local", "--test-type", "all", "--parallel", "--verbose"]
+    networks:
+      - integration-test
+    
+  # Test result aggregator service
+  test-aggregator:
+    build:
+      context: ../../..
+      dockerfile: test/integration/docker/Dockerfile.integration-test
+      target: integration-test
+    container_name: prettyjson-aggregator
+    volumes:
+      - ../../../test-results:/test/test-results
+      - ../../../.:/test:ro
+    environment:
+      - TEST_PLATFORM=linux-ubuntu
+      - TEST_ARCH=amd64
+      - GO_ENV=container
+    command: ["./scripts/platform-tests/test-result-aggregator.sh", "--input-dir", "/test/test-results", "--output-dir", "/test/test-results", "--format", "json,html"]
+    networks:
+      - integration-test
+    depends_on:
+      - integration-test-ubuntu
+      - integration-test-alpine
+      - integration-test-centos
+      - data-exchange-test
+      - file-format-test
+      - e2e-workflow-test
+
+networks:
+  integration-test:
+    driver: bridge
+    name: prettyjson-integration-test
+    
+volumes:
+  test-results:
+    name: prettyjson-test-results

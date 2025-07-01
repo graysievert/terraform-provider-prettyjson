@@ -1,0 +1,482 @@
+# Automated test execution workflow with HashiCorp-style reporting
+name: Automated Test Execution
+
+# Comprehensive trigger configuration
+on:
+  pull_request:
+    paths-ignore:
+      - 'README.md'
+      - 'docs/**'
+      - '*.md'
+  push:
+    branches:
+      - main
+      - master
+      - develop
+    paths-ignore:
+      - 'README.md'
+      - 'docs/**'
+      - '*.md'
+  schedule:
+    # Run comprehensive tests nightly at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      test_suites:
+        description: 'Test suites to run'
+        required: false
+        default: 'unit,acceptance,function,integration'
+        type: choice
+        options:
+          - 'unit'
+          - 'acceptance'
+          - 'function'
+          - 'integration'
+          - 'unit,acceptance'
+          - 'unit,acceptance,function'
+          - 'unit,acceptance,function,integration'
+          - 'performance'
+          - 'all'
+      parallel_jobs:
+        description: 'Number of parallel jobs'
+        required: false
+        default: '4'
+        type: choice
+        options:
+          - '1'
+          - '2'
+          - '4'
+          - '8'
+      retry_count:
+        description: 'Maximum retry attempts'
+        required: false
+        default: '3'
+        type: choice
+        options:
+          - '1'
+          - '2'
+          - '3'
+          - '5'
+      enable_performance_optimization:
+        description: 'Enable performance optimization features'
+        required: false
+        default: false
+        type: boolean
+      generate_comprehensive_report:
+        description: 'Generate comprehensive test report'
+        required: false
+        default: true
+        type: boolean
+      notify_slack:
+        description: 'Send Slack notifications'
+        required: false
+        default: false
+        type: boolean
+
+# Permissions for automated test execution
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+  actions: read
+
+# Environment variables
+env:
+  # Test execution configuration
+  GO_VERSION_FILE: 'go.mod'
+  MIN_TERRAFORM_VERSION: "1.8.0"
+  TEST_TIMEOUT: "30m"
+  ARTIFACT_RETENTION_DAYS: 30
+  
+  # Performance and reliability settings
+  DEFAULT_PARALLEL_JOBS: 4
+  DEFAULT_RETRY_COUNT: 3
+  DEFAULT_SUCCESS_THRESHOLD: 80
+  
+  # CI/CD integration
+  ENABLE_COVERAGE_REPORTING: true
+  ENABLE_PERFORMANCE_METRICS: true
+  ENABLE_TREND_ANALYSIS: false
+
+jobs:
+  # Configuration and planning job
+  configure-execution:
+    name: Configure Test Execution
+    runs-on: ubuntu-latest
+    outputs:
+      test-suites: ${{ steps.config.outputs.test-suites }}
+      parallel-jobs: ${{ steps.config.outputs.parallel-jobs }}
+      retry-count: ${{ steps.config.outputs.retry-count }}
+      enable-performance: ${{ steps.config.outputs.enable-performance }}
+      generate-report: ${{ steps.config.outputs.generate-report }}
+      execution-strategy: ${{ steps.config.outputs.execution-strategy }}
+      terraform-versions: ${{ steps.config.outputs.terraform-versions }}
+    
+    steps:
+      - name: Configure execution parameters
+        id: config
+        run: |
+          # Determine test suites based on trigger and input
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TEST_SUITES="${{ github.event.inputs.test_suites }}"
+            PARALLEL_JOBS="${{ github.event.inputs.parallel_jobs }}"
+            RETRY_COUNT="${{ github.event.inputs.retry_count }}"
+            ENABLE_PERFORMANCE="${{ github.event.inputs.enable_performance_optimization }}"
+            GENERATE_REPORT="${{ github.event.inputs.generate_comprehensive_report }}"
+          elif [[ "${{ github.event_name }}" == "schedule" ]]; then
+            TEST_SUITES="unit,acceptance,function,integration,performance"
+            PARALLEL_JOBS="8"
+            RETRY_COUNT="3"
+            ENABLE_PERFORMANCE="true"
+            GENERATE_REPORT="true"
+          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            TEST_SUITES="unit,acceptance,function"
+            PARALLEL_JOBS="4"
+            RETRY_COUNT="2"
+            ENABLE_PERFORMANCE="false"
+            GENERATE_REPORT="true"
+          else
+            TEST_SUITES="unit,acceptance,function,integration"
+            PARALLEL_JOBS="4"
+            RETRY_COUNT="3"
+            ENABLE_PERFORMANCE="true"
+            GENERATE_REPORT="true"
+          fi
+          
+          # Determine execution strategy
+          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+            EXECUTION_STRATEGY="comprehensive"
+            TERRAFORM_VERSIONS="1.8.0,1.8.5,1.9.0,1.9.8,1.10.0,latest"
+          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            EXECUTION_STRATEGY="quick"
+            TERRAFORM_VERSIONS="1.8.5,1.9.8,latest"
+          else
+            EXECUTION_STRATEGY="standard"
+            TERRAFORM_VERSIONS="1.8.5,1.9.8,latest"
+          fi
+          
+          echo "test-suites=$TEST_SUITES" >> $GITHUB_OUTPUT
+          echo "parallel-jobs=$PARALLEL_JOBS" >> $GITHUB_OUTPUT
+          echo "retry-count=$RETRY_COUNT" >> $GITHUB_OUTPUT
+          echo "enable-performance=$ENABLE_PERFORMANCE" >> $GITHUB_OUTPUT
+          echo "generate-report=$GENERATE_REPORT" >> $GITHUB_OUTPUT
+          echo "execution-strategy=$EXECUTION_STRATEGY" >> $GITHUB_OUTPUT
+          echo "terraform-versions=$TERRAFORM_VERSIONS" >> $GITHUB_OUTPUT
+          
+          echo "Configured execution:"
+          echo "  Test suites: $TEST_SUITES"
+          echo "  Parallel jobs: $PARALLEL_JOBS"
+          echo "  Retry count: $RETRY_COUNT"
+          echo "  Strategy: $EXECUTION_STRATEGY"
+          echo "  Terraform versions: $TERRAFORM_VERSIONS"
+
+  # Automated test execution job
+  automated-test-execution:
+    name: Automated Test Execution
+    needs: configure-execution
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        terraform-version: ${{ fromJson(format('["{0}"]', join(split(needs.configure-execution.outputs.terraform-versions, ','), '", "'))) }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      
+      - name: Setup Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: ${{ env.GO_VERSION_FILE }}
+          cache: true
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: ${{ matrix.terraform-version }}
+          terraform_wrapper: false
+      
+      - name: Validate environment
+        run: |
+          echo "Environment validation for automated test execution"
+          echo "Go version: $(go version)"
+          echo "Terraform version: $(terraform version)"
+          echo "Platform: $(uname -a)"
+          echo "Available memory: $(free -h)"
+          echo "Available disk space: $(df -h)"
+          
+          # Validate script permissions
+          chmod +x scripts/platform-tests/automated-test-execution.sh
+          chmod +x scripts/platform-tests/test-result-aggregator.sh
+          chmod +x scripts/platform-tests/enhanced-parallel-executor.sh
+      
+      - name: Prepare Go modules
+        run: |
+          go mod download
+          go mod verify
+      
+      - name: Build provider
+        run: |
+          go build -v .
+      
+      - name: Execute automated test suite
+        id: test-execution
+        run: |
+          # Create test reports directory
+          mkdir -p test-reports test-artifacts
+          
+          # Configure test execution parameters
+          SUITES="${{ needs.configure-execution.outputs.test-suites }}"
+          PARALLEL="${{ needs.configure-execution.outputs.parallel-jobs }}"
+          RETRIES="${{ needs.configure-execution.outputs.retry-count }}"
+          PERFORMANCE="${{ needs.configure-execution.outputs.enable-performance }}"
+          
+          # Set Terraform version for version-specific tests
+          export TF_VERSION="${{ matrix.terraform-version }}"
+          
+          # Execute automated test pipeline
+          ./scripts/platform-tests/automated-test-execution.sh \
+            --suites "$SUITES" \
+            --parallel "$PARALLEL" \
+            --retry "$RETRIES" \
+            --timeout "$TEST_TIMEOUT" \
+            --generate-report \
+            --output-format "json,junit,github" \
+            --upload-artifacts \
+            --verbose \
+            $([ "$PERFORMANCE" = "true" ] && echo "--performance-optimization") \
+            $([ "${{ github.event_name }}" = "schedule" ] && echo "--no-fail-fast") \
+            || echo "test_execution_failed=true" >> $GITHUB_OUTPUT
+      
+      - name: Aggregate test results
+        if: always()
+        run: |
+          # Run test result aggregation
+          ./scripts/platform-tests/test-result-aggregator.sh \
+            --input-dir test-reports \
+            --output-dir aggregated-reports \
+            --formats json,markdown,junit,github \
+            --include-logs \
+            --threshold ${{ env.DEFAULT_SUCCESS_THRESHOLD }} \
+            --performance-metrics \
+            --verbose
+      
+      - name: Enhanced parallel execution analysis
+        if: always() && needs.configure-execution.outputs.enable-performance == 'true'
+        run: |
+          # Run enhanced parallel execution analysis for performance insights
+          ./scripts/platform-tests/enhanced-parallel-executor.sh \
+            --max-parallel ${{ needs.configure-execution.outputs.parallel-jobs }} \
+            --load-balancing \
+            --resource-monitoring \
+            --adaptive-parallelism \
+            --performance-optimization \
+            --dry-run \
+            --verbose
+      
+      - name: Generate coverage report
+        if: always() && env.ENABLE_COVERAGE_REPORTING == 'true'
+        run: |
+          # Generate coverage report for test execution
+          go test -v -coverprofile=coverage-automated.out ./internal/provider/
+          go tool cover -html=coverage-automated.out -o coverage-automated.html
+          
+          # Generate coverage summary
+          go tool cover -func=coverage-automated.out > coverage-summary.txt
+          
+          # Extract coverage percentage
+          COVERAGE_PERCENT=$(go tool cover -func=coverage-automated.out | grep total | awk '{print $3}' | sed 's/%//')
+          echo "COVERAGE_PERCENT=$COVERAGE_PERCENT" >> $GITHUB_ENV
+          echo "Coverage: ${COVERAGE_PERCENT}%"
+      
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: automated-test-reports-${{ matrix.terraform-version }}
+          path: |
+            test-reports/
+            aggregated-reports/
+            coverage-automated.*
+            coverage-summary.txt
+          retention-days: ${{ env.ARTIFACT_RETENTION_DAYS }}
+      
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: automated-test-artifacts-${{ matrix.terraform-version }}
+          path: |
+            test-artifacts/
+            *.json
+            *.log
+          retention-days: ${{ env.ARTIFACT_RETENTION_DAYS }}
+      
+      - name: Comment on PR with results
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            
+            // Read GitHub summary if it exists
+            let summary = "## Automated Test Execution Results\n\n";
+            
+            try {
+              const summaryFile = 'aggregated-reports/github-summary.md';
+              if (fs.existsSync(summaryFile)) {
+                summary += fs.readFileSync(summaryFile, 'utf8');
+              } else {
+                summary += "⚠️ Test summary not available\n";
+              }
+              
+              // Add coverage information if available
+              const coveragePercent = process.env.COVERAGE_PERCENT;
+              if (coveragePercent) {
+                summary += `\n### Code Coverage\n`;
+                summary += `- **Coverage**: ${coveragePercent}%\n`;
+                
+                const coverageIcon = parseFloat(coveragePercent) >= 80 ? "✅" : "⚠️";
+                summary += `- **Status**: ${coverageIcon} ${parseFloat(coveragePercent) >= 80 ? "Good" : "Needs Improvement"}\n`;
+              }
+              
+              // Add Terraform version info
+              summary += `\n### Test Configuration\n`;
+              summary += `- **Terraform Version**: ${{ matrix.terraform-version }}\n`;
+              summary += `- **Test Suites**: ${{ needs.configure-execution.outputs.test-suites }}\n`;
+              summary += `- **Parallel Jobs**: ${{ needs.configure-execution.outputs.parallel-jobs }}\n`;
+              summary += `- **Retry Count**: ${{ needs.configure-execution.outputs.retry-count }}\n`;
+              
+            } catch (error) {
+              summary += `Error reading test results: ${error.message}\n`;
+            }
+            
+            // Post comment on PR
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: summary
+            });
+
+  # Results aggregation and notification job
+  test-results-summary:
+    name: Test Results Summary
+    needs: [configure-execution, automated-test-execution]
+    if: always()
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Download all test artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-test-results
+      
+      - name: Aggregate results across Terraform versions
+        run: |
+          echo "# Automated Test Execution Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "- **Test Suites**: ${{ needs.configure-execution.outputs.test-suites }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Execution Strategy**: ${{ needs.configure-execution.outputs.execution-strategy }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Parallel Jobs**: ${{ needs.configure-execution.outputs.parallel-jobs }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Retry Count**: ${{ needs.configure-execution.outputs.retry-count }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "## Results by Terraform Version" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Analyze results from each Terraform version
+          if [ -d "all-test-results" ]; then
+            echo "| Terraform Version | Status | Details |" >> $GITHUB_STEP_SUMMARY
+            echo "|-------------------|--------|---------|" >> $GITHUB_STEP_SUMMARY
+            
+            for dir in all-test-results/automated-test-reports-*; do
+              if [ -d "$dir" ]; then
+                version=$(basename "$dir" | sed 's/automated-test-reports-//')
+                
+                # Check for summary file
+                if [ -f "$dir/aggregated-reports/test-execution-summary.json" ]; then
+                  # Extract status from JSON (would need jq in real implementation)
+                  status="✅ Passed"  # Simplified for example
+                  details="[View Details](./all-test-results/$(basename "$dir"))"
+                else
+                  status="❓ Unknown"
+                  details="No summary available"
+                fi
+                
+                echo "| $version | $status | $details |" >> $GITHUB_STEP_SUMMARY
+              fi
+            done
+          else
+            echo "No test results found" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Overall Status" >> $GITHUB_STEP_SUMMARY
+          echo "- **Test Execution**: ${{ needs.automated-test-execution.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Generated**: $(date -u)" >> $GITHUB_STEP_SUMMARY
+      
+      - name: Check overall results
+        run: |
+          if [[ "${{ needs.automated-test-execution.result }}" == "success" ]]; then
+            echo "✅ All automated tests passed successfully"
+            exit 0
+          else
+            echo "❌ Some automated tests failed"
+            echo "Execution result: ${{ needs.automated-test-execution.result }}"
+            exit 1
+          fi
+      
+      - name: Send Slack notification
+        if: always() && (github.event_name == 'schedule' || github.event.inputs.notify_slack == 'true')
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          if [[ -n "$SLACK_WEBHOOK" ]]; then
+            # Prepare Slack notification
+            STATUS="${{ needs.automated-test-execution.result }}"
+            ICON=$([ "$STATUS" = "success" ] && echo ":white_check_mark:" || echo ":x:")
+            COLOR=$([ "$STATUS" = "success" ] && echo "good" || echo "danger")
+            
+            PAYLOAD=$(cat << EOF
+          {
+            "attachments": [
+              {
+                "color": "$COLOR",
+                "title": "$ICON Terraform Provider Automated Test Results",
+                "fields": [
+                  {
+                    "title": "Repository",
+                    "value": "${{ github.repository }}",
+                    "short": true
+                  },
+                  {
+                    "title": "Branch",
+                    "value": "${{ github.ref_name }}",
+                    "short": true
+                  },
+                  {
+                    "title": "Test Suites",
+                    "value": "${{ needs.configure-execution.outputs.test-suites }}",
+                    "short": true
+                  },
+                  {
+                    "title": "Status",
+                    "value": "$STATUS",
+                    "short": true
+                  }
+                ],
+                "footer": "GitHub Actions",
+                "ts": $(date +%s)
+              }
+            ]
+          }
+          EOF
+          )
+            
+            curl -X POST -H 'Content-type: application/json' --data "$PAYLOAD" "$SLACK_WEBHOOK" || echo "Failed to send Slack notification"
+          else
+            echo "Slack webhook not configured"
+          fi

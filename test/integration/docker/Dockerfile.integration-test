@@ -1,0 +1,141 @@
+# Multi-stage Dockerfile for cross-platform integration testing
+# This Dockerfile creates containerized environments for testing provider functionality
+# across different base images and architectures
+
+FROM ubuntu:22.04 as base-ubuntu
+
+# Prevent interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install required packages
+RUN apt-get update && apt-get install -y \
+    bash \
+    curl \
+    jq \
+    unzip \
+    ca-certificates \
+    wget \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Go
+RUN wget https://go.dev/dl/go1.23.5.linux-amd64.tar.gz \
+    && tar -C /usr/local -xzf go1.23.5.linux-amd64.tar.gz \
+    && rm go1.23.5.linux-amd64.tar.gz
+
+ENV PATH="/usr/local/go/bin:$PATH"
+
+# Install Terraform
+RUN curl -fsSL https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_linux_amd64.zip -o terraform.zip \
+    && unzip terraform.zip \
+    && mv terraform /usr/local/bin/ \
+    && rm terraform.zip
+
+# Set working directory
+WORKDIR /test
+
+# ========================================
+FROM alpine:3.18 as base-alpine
+
+# Install required packages
+RUN apk add --no-cache \
+    bash \
+    curl \
+    jq \
+    unzip \
+    ca-certificates \
+    wget \
+    git
+
+# Install Go
+RUN wget https://go.dev/dl/go1.23.5.linux-amd64.tar.gz \
+    && tar -C /usr/local -xzf go1.23.5.linux-amd64.tar.gz \
+    && rm go1.23.5.linux-amd64.tar.gz
+
+ENV PATH="/usr/local/go/bin:$PATH"
+
+# Install Terraform
+RUN curl -fsSL https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_linux_amd64.zip -o terraform.zip \
+    && unzip terraform.zip \
+    && mv terraform /usr/local/bin/ \
+    && rm terraform.zip
+
+# Set working directory
+WORKDIR /test
+
+# ========================================
+FROM centos:8 as base-centos
+
+# Install required packages
+RUN yum update -y && yum install -y \
+    bash \
+    curl \
+    jq \
+    unzip \
+    ca-certificates \
+    wget \
+    git \
+    && yum clean all
+
+# Install Go
+RUN wget https://go.dev/dl/go1.23.5.linux-amd64.tar.gz \
+    && tar -C /usr/local -xzf go1.23.5.linux-amd64.tar.gz \
+    && rm go1.23.5.linux-amd64.tar.gz
+
+ENV PATH="/usr/local/go/bin:$PATH"
+
+# Install Terraform
+RUN curl -fsSL https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_linux_amd64.zip -o terraform.zip \
+    && unzip terraform.zip \
+    && mv terraform /usr/local/bin/ \
+    && rm terraform.zip
+
+# Set working directory
+WORKDIR /test
+
+# ========================================
+# Final stage - Ubuntu with test runner
+FROM base-ubuntu as integration-test
+
+# Copy project files
+COPY . .
+
+# Set executable permissions
+RUN chmod +x scripts/platform-tests/*.sh
+
+# Create test results directory
+RUN mkdir -p test-results/integration
+
+# Default command runs the integration test suite
+CMD ["./scripts/platform-tests/integration-test-runner.sh", "-e", "local", "--test-type", "all", "--verbose"]
+
+# ========================================
+# Alternative stages for specific distributions
+FROM base-alpine as integration-test-alpine
+
+# Copy project files
+COPY . .
+
+# Set executable permissions
+RUN chmod +x scripts/platform-tests/*.sh
+
+# Create test results directory
+RUN mkdir -p test-results/integration
+
+# Default command runs the integration test suite
+CMD ["./scripts/platform-tests/integration-test-runner.sh", "-e", "local", "--test-type", "all", "--verbose"]
+
+# ========================================
+FROM base-centos as integration-test-centos
+
+# Copy project files
+COPY . .
+
+# Set executable permissions
+RUN chmod +x scripts/platform-tests/*.sh
+
+# Create test results directory
+RUN mkdir -p test-results/integration
+
+# Default command runs the integration test suite
+CMD ["./scripts/platform-tests/integration-test-runner.sh", "-e", "local", "--test-type", "all", "--verbose"]
