@@ -27,7 +27,7 @@ on:
       force_update:
         description: 'Force documentation update even if no changes detected'
         required: false
-        default: 'false'
+        default: false
         type: boolean
 
 # Documentation generation needs read/write permissions
@@ -61,6 +61,12 @@ jobs:
 
       - name: Download Go modules
         run: go mod download
+
+      - name: Set script permissions
+        run: |
+          # Make all scripts executable
+          find scripts -name "*.sh" -type f -exec chmod +x {} \;
+          echo "Made scripts executable"
 
       - name: Generate documentation
         run: make docs

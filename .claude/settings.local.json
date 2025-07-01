@@ -1,11 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(timeout:*)",
-      "Bash(scripts/enhance-docs.sh:*)",
-      "Bash(scripts/test-provider.sh:*)",
-      "Bash(TF_VERSION=1.12.1 go test -v ./internal/provider/ -run TestTerraformVersion)",
-      "Bash(git check-ignore:*)"
+      "Bash(mkdir:*)",
+      "mcp__ide__getDiagnostics"
     ],
     "deny": []
   }

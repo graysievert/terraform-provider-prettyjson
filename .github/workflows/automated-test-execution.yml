@@ -111,6 +111,7 @@ jobs:
       generate-report: ${{ steps.config.outputs.generate-report }}
       execution-strategy: ${{ steps.config.outputs.execution-strategy }}
       terraform-versions: ${{ steps.config.outputs.terraform-versions }}
+      terraform-versions-json: ${{ steps.config.outputs.terraform-versions-json }}
     
     steps:
       - name: Configure execution parameters
@@ -155,6 +156,9 @@ jobs:
             TERRAFORM_VERSIONS="1.8.5,1.9.8,latest"
           fi
           
+          # Convert comma-separated versions to JSON array
+          TERRAFORM_VERSIONS_JSON=$(echo "$TERRAFORM_VERSIONS" | sed 's/,/", "/g' | sed 's/^/["/' | sed 's/$/"]/')
+          
           echo "test-suites=$TEST_SUITES" >> $GITHUB_OUTPUT
           echo "parallel-jobs=$PARALLEL_JOBS" >> $GITHUB_OUTPUT
           echo "retry-count=$RETRY_COUNT" >> $GITHUB_OUTPUT
@@ -162,6 +166,7 @@ jobs:
           echo "generate-report=$GENERATE_REPORT" >> $GITHUB_OUTPUT
           echo "execution-strategy=$EXECUTION_STRATEGY" >> $GITHUB_OUTPUT
           echo "terraform-versions=$TERRAFORM_VERSIONS" >> $GITHUB_OUTPUT
+          echo "terraform-versions-json=$TERRAFORM_VERSIONS_JSON" >> $GITHUB_OUTPUT
           
           echo "Configured execution:"
           echo "  Test suites: $TEST_SUITES"
@@ -179,7 +184,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        terraform-version: ${{ fromJson(format('["{0}"]', join(split(needs.configure-execution.outputs.terraform-versions, ','), '", "'))) }}
+        terraform-version: ${{ fromJson(needs.configure-execution.outputs.terraform-versions-json) }}
     
     steps:
       - name: Checkout repository
