@@ -9,7 +9,11 @@ install: build
 lint:
 	golangci-lint run
 
-generate:
+generate: docs-generate-legacy
+	@echo "⚠️  WARNING: 'make generate' uses legacy documentation generation."
+	@echo "   For complete documentation with examples, use 'make docs' instead."
+
+docs-generate-legacy:
 	cd tools; go generate ./...
 
 fmt:
@@ -348,4 +352,4 @@ help-automated:
 	@echo "  help-automated              Show this help message"
 	@echo ""
 
-.PHONY: fmt lint test testacc build install generate docs docs-generate docs-validate docs-clean docs-dev validate-env validate-env-report validate-env-strict test-platform test-platform-setup test-cross-platform test-amd64 test-arm64 test-architectures build-amd64 build-arm64 build-architectures test-terraform-versions test-terraform-versions-minimal test-terraform-versions-extended test-terraform-version validate-terraform-versions test-automated test-automated-quick test-automated-comprehensive test-automated-parallel aggregate-test-results aggregate-test-results-comprehensive ci-test-quick ci-test-standard ci-test-comprehensive test-performance test-load-balancing validate-test-infrastructure generate-test-report help-automated clean clean-test clean-build clean-all
+.PHONY: fmt lint test testacc build install generate docs docs-generate docs-generate-legacy docs-validate docs-clean docs-dev validate-env validate-env-report validate-env-strict test-platform test-platform-setup test-cross-platform test-amd64 test-arm64 test-architectures build-amd64 build-arm64 build-architectures test-terraform-versions test-terraform-versions-minimal test-terraform-versions-extended test-terraform-version validate-terraform-versions test-automated test-automated-quick test-automated-comprehensive test-automated-parallel aggregate-test-results aggregate-test-results-comprehensive ci-test-quick ci-test-standard ci-test-comprehensive test-performance test-load-balancing validate-test-infrastructure generate-test-report help-automated clean clean-test clean-build clean-all

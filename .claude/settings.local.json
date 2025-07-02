@@ -5,8 +5,13 @@
       "mcp__ide__getDiagnostics",
       "Bash(grep:*)",
       "Bash(./scripts/platform-tests/test-result-aggregator.sh:*)",
-      "Bash(tail:*)"
+      "Bash(tail:*)",
+      "Bash(make:*)"
     ],
     "deny": []
-  }
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "task-master-ai"
+  ]
 }
