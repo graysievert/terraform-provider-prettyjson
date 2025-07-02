@@ -48,7 +48,6 @@ jobs:
           terraform_wrapper: false
       - run: |
           chmod +x ./scripts/*.sh || true
-      - run: make generate
       - run: make docs
       - name: git diff
         run: |
