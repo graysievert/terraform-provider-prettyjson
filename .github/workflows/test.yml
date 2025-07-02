@@ -46,6 +46,9 @@ jobs:
       - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         with:
           terraform_wrapper: false
+      - run: |
+          chmod +x ./scripts/*.sh || true
+      - run: make generate
       - run: make docs
       - name: git diff
         run: |
