@@ -62,7 +62,7 @@ output "terraform_integration_info" {
   description = "Information about Terraform integration and provider usage"
   value = {
     terraform_version   = "1.8.0+"
-    prettyjson_provider = "hashicorp/prettyjson"
+    prettyjson_provider = "graysievert/prettyjson"
     local_provider      = "hashicorp/local"
     workspace           = terraform.workspace
     timestamp           = timestamp()

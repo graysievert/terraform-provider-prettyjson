@@ -1,4 +1,4 @@
-module github.com/hashicorp/terraform-provider-prettyjson
+module github.com/graysievert/terraform-provider-prettyjson
 
 go 1.23.7
 

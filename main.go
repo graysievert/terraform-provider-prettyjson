@@ -9,7 +9,7 @@ import (
 	"log"
 
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
-	"github.com/hashicorp/terraform-provider-prettyjson/internal/provider"
+	"github.com/graysievert/terraform-provider-prettyjson/internal/provider"
 )
 
 var (
@@ -28,7 +28,7 @@ func main() {
 	flag.Parse()
 
 	opts := providerserver.ServeOpts{
-		Address: "registry.terraform.io/hashicorp/prettyjson",
+		Address: "registry.terraform.io/graysievert/prettyjson",
 		Debug:   debug,
 	}
 

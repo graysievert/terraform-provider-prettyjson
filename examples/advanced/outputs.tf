@@ -156,7 +156,7 @@ output "terraform_integration_metadata" {
   description = "Metadata about Terraform integration and provider usage"
   value = {
     providers_used = {
-      prettyjson = "hashicorp/prettyjson"
+      prettyjson = "graysievert/prettyjson"
       local      = "hashicorp/local"
       random     = "hashicorp/random"
     }

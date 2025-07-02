@@ -1,8 +1,8 @@
 # Terraform Provider PrettyJSON
 
-[![Tests](https://github.com/hashicorp/terraform-provider-prettyjson/actions/workflows/test.yml/badge.svg)](https://github.com/hashicorp/terraform-provider-prettyjson/actions/workflows/test.yml)
-[![Documentation](https://github.com/hashicorp/terraform-provider-prettyjson/actions/workflows/docs.yml/badge.svg)](https://github.com/hashicorp/terraform-provider-prettyjson/actions/workflows/docs.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/hashicorp/terraform-provider-prettyjson)](https://goreportcard.com/report/github.com/hashicorp/terraform-provider-prettyjson)
+[![Tests](https://github.com/graysievert/terraform-provider-prettyjson/actions/workflows/test.yml/badge.svg)](https://github.com/graysievert/terraform-provider-prettyjson/actions/workflows/test.yml)
+[![Documentation](https://github.com/graysievert/terraform-provider-prettyjson/actions/workflows/docs.yml/badge.svg)](https://github.com/graysievert/terraform-provider-prettyjson/actions/workflows/docs.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/graysievert/terraform-provider-prettyjson)](https://goreportcard.com/report/github.com/graysievert/terraform-provider-prettyjson)
 
 A Terraform provider for formatting JSON strings with configurable indentation. This function-only provider helps maintain readable JSON configuration files in your infrastructure as code workflows.
 
@@ -28,8 +28,7 @@ Add the provider to your Terraform configuration:
 terraform {
   required_providers {
     prettyjson = {
-      source  = "hashicorp/prettyjson"
-      version = "~> 1.0"
+      source = "graysievert/prettyjson"
     }
     local = {
       source = "hashicorp/local"
@@ -183,14 +182,13 @@ resource "local_file" "service_config" {
 
 ### Terraform Registry
 
-The provider is available on the [Terraform Registry](https://registry.terraform.io/providers/hashicorp/prettyjson):
+The provider is available on the [Terraform Registry](https://registry.terraform.io/providers/graysievert/prettyjson):
 
 ```terraform
 terraform {
   required_providers {
     prettyjson = {
-      source  = "hashicorp/prettyjson"
-      version = "~> 1.0"
+      source = "graysievert/prettyjson"
     }
   }
 }
@@ -202,7 +200,7 @@ For local development and testing:
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/hashicorp/terraform-provider-prettyjson
+git clone https://github.com/graysievert/terraform-provider-prettyjson
 cd terraform-provider-prettyjson
 ```
 
@@ -316,7 +314,7 @@ Common error patterns and solutions are documented in the [function reference](d
 
 ## Versioning
 
-This project uses [Semantic Versioning](https://semver.org/). For available versions, see the [tags on this repository](https://github.com/hashicorp/terraform-provider-prettyjson/tags).
+This project uses [Semantic Versioning](https://semver.org/). For available versions, see the [tags on this repository](https://github.com/graysievert/terraform-provider-prettyjson/tags).
 
 ## License
 
@@ -325,9 +323,9 @@ This project is licensed under the MPL-2.0 License - see the [LICENSE](LICENSE) 
 ## Support
 
 - **Documentation**: [Provider Docs](docs/) | [Examples](examples/)
-- **Issues**: [GitHub Issues](https://github.com/hashicorp/terraform-provider-prettyjson/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/hashicorp/terraform-provider-prettyjson/discussions)
-- **Security**: Report security vulnerabilities via [GitHub Security Advisories](https://github.com/hashicorp/terraform-provider-prettyjson/security/advisories)
+- **Issues**: [GitHub Issues](https://github.com/graysievert/terraform-provider-prettyjson/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/graysievert/terraform-provider-prettyjson/discussions)
+- **Security**: Report security vulnerabilities via [GitHub Security Advisories](https://github.com/graysievert/terraform-provider-prettyjson/security/advisories)
 
 ## Acknowledgments
 

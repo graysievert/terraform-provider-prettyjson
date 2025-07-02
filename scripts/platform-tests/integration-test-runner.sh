@@ -140,7 +140,7 @@ setup_local_environment() {
     go build -v .
     
     # Create provider mirror for testing
-    local provider_dir="$INTEGRATION_TEST_DIR/providers/registry.terraform.io/hashicorp/prettyjson/1.0.0"
+    local provider_dir="$INTEGRATION_TEST_DIR/providers/registry.terraform.io/graysievert/prettyjson/0.0.1"
     mkdir -p "$provider_dir/$(go env GOOS)_$(go env GOARCH)"
     cp "$PROJECT_ROOT/terraform-provider-prettyjson" "$provider_dir/$(go env GOOS)_$(go env GOARCH)/"
     
@@ -284,7 +284,7 @@ run_data_exchange_tests() {
 terraform {
   required_providers {
     prettyjson = {
-      source = "hashicorp/prettyjson"
+      source = "graysievert/prettyjson"
     }
   }
 }
@@ -527,7 +527,7 @@ run_file_format_tests() {
 terraform {
   required_providers {
     prettyjson = {
-      source = "hashicorp/prettyjson"
+      source = "graysievert/prettyjson"
     }
     local = {
       source = "hashicorp/local"
@@ -686,7 +686,7 @@ run_e2e_workflow_tests() {
 terraform {
   required_providers {
     prettyjson = {
-      source = "hashicorp/prettyjson"
+      source = "graysievert/prettyjson"
     }
     local = {
       source = "hashicorp/local"

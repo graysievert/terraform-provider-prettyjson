@@ -3,7 +3,7 @@
 terraform {
   required_providers {
     prettyjson = {
-      source = "hashicorp/prettyjson"
+      source = "graysievert/prettyjson"
     }
     local = {
       source = "hashicorp/local"

@@ -4,8 +4,7 @@
 terraform {
   required_providers {
     prettyjson = {
-      source = "hashicorp/prettyjson"
-      version = "~> 1.0"
+      source = "graysievert/prettyjson"
     }
     local = {
       source = "hashicorp/local"

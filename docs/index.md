@@ -35,7 +35,7 @@ This provider does not manage any infrastructure resources - it only provides ut
 terraform {
   required_providers {
     prettyjson = {
-      source = "hashicorp/prettyjson"
+      source = "graysievert/prettyjson"
     }
     local = {
       source = "hashicorp/local"
