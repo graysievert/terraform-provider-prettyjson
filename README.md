@@ -8,7 +8,9 @@ A Terraform provider for formatting JSON strings with configurable indentation. 
 
 ## Disclaimer
 
-This is an experiment. Almost everything in this repo is generated via AI tools. Use at your own risk.
+This is an experiment. Almost everything in this repo is generated via AI tools. 
+Use at your own risk. Read the full [story](https://github.com/graysievert/terraform-provider-prettyjson/blob/main/story.md). 
+
 
 ## Features
 
